@@ -13,7 +13,7 @@ from cscall.metrics import score
 Transcriber = Callable[[str], str]
 
 # Utterance attributes that make sense as breakdown dimensions.
-GROUPABLE_FIELDS = ("speaker", "lang", "accent", "cs_density")
+GROUPABLE_FIELDS = ("speaker", "lang", "accent", "cs_density", "cs_bucket")
 
 
 def run_eval(

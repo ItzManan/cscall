@@ -1,4 +1,12 @@
-from cscall.finetune.cs_density import code_switch_density
+from cscall.finetune.cs_density import code_switch_density, cs_bucket
+
+
+def test_cs_bucket_boundaries():
+    assert cs_bucket(0.0) == "none"
+    assert cs_bucket(0.2) == "low"
+    assert cs_bucket(0.5) == "mid"
+    assert cs_bucket(0.9) == "high"
+    assert cs_bucket(1.0) == "high"
 
 
 def test_all_english_is_zero():
