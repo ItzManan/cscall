@@ -20,11 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> None:
     args = build_parser().parse_args(argv)
-    os.makedirs(args.out, exist_ok=True)
     if args.dry_run or not args.execute:
         print(f"[dry-run] Would download Svarah into {args.out}")
         print(f"See {SVARAH_INFO_URL} for the current dataset link and license.")
         return
+    os.makedirs(args.out, exist_ok=True)
     raise SystemExit(
         "Automated download not implemented: follow data/README.md to obtain "
         "Svarah (license acceptance required), then place files in " + args.out

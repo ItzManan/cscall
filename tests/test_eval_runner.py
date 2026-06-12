@@ -26,6 +26,13 @@ def test_run_eval_groups_by_accent():
     assert report["groups"]["north"]["wer"] == 0.0  # north utts transcribed perfectly
 
 
+def test_invalid_group_by_raises():
+    import pytest
+    utts = load_manifest("tests/fixtures/mini_manifest.jsonl")
+    with pytest.raises(ValueError, match="group_by"):
+        run_eval(utts, fake_transcriber, group_by="speakr")
+
+
 def test_render_markdown_contains_table():
     utts = load_manifest("tests/fixtures/mini_manifest.jsonl")
     report = run_eval(utts, fake_transcriber, group_by="accent")

@@ -12,6 +12,9 @@ from cscall.metrics import score
 
 Transcriber = Callable[[str], str]
 
+# Utterance attributes that make sense as breakdown dimensions.
+GROUPABLE_FIELDS = ("speaker", "lang", "accent", "cs_density")
+
 
 def run_eval(
     utterances: list[Utterance],
@@ -19,6 +22,10 @@ def run_eval(
     group_by: Optional[str] = None,
 ) -> dict:
     """Transcribe every utterance, return overall (and optionally grouped) metrics."""
+    if group_by is not None and group_by not in GROUPABLE_FIELDS:
+        raise ValueError(
+            f"group_by must be one of {GROUPABLE_FIELDS}, got {group_by!r}"
+        )
     refs = [u.text for u in utterances]
     hyps = [transcribe(u.audio_path) for u in utterances]
     report = {"overall": score(refs, hyps)}
