@@ -1,10 +1,14 @@
 __pycache__/
 *.pyc
+*.egg-info/
+.claude/
 .venv/
 venv/
 node_modules/
 data/raw/
 data/recorded/
+data/manifests/
+*.zip
 *.wav
 *.ckpt
 *.pt
