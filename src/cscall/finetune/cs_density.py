@@ -15,3 +15,18 @@ def code_switch_density(text: str) -> float:
         return 0.0
     deva = sum(1 for t in tokens if _DEVANAGARI_RE.search(t))
     return deva / len(tokens)
+
+
+def cs_bucket(density: float) -> str:
+    """Coarse, groupable code-switch bucket: none / low / mid / high.
+
+    Continuous cs_density makes a poor group_by key (one row per value); this bins
+    it so WER breakdowns have a handful of meaningful rows.
+    """
+    if density <= 0.0:
+        return "none"
+    if density < 0.34:
+        return "low"
+    if density < 0.67:
+        return "mid"
+    return "high"

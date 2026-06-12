@@ -15,6 +15,7 @@ class Utterance:
     lang: Optional[str] = None
     accent: Optional[str] = None
     cs_density: Optional[float] = None
+    cs_bucket: Optional[str] = None  # coarse none/low/mid/high for groupable breakdowns
 
 
 def load_manifest(path: str) -> list[Utterance]:
@@ -38,6 +39,7 @@ def load_manifest(path: str) -> list[Utterance]:
                     lang=row.get("lang"),
                     accent=row.get("accent"),
                     cs_density=row.get("cs_density"),
+                    cs_bucket=row.get("cs_bucket"),
                 )
             )
     return utts

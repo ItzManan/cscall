@@ -34,6 +34,7 @@ def test_build_split_rows(tmp_path):
     assert r.text == "order कहां है"
     # 2 of 3 tokens Devanagari -> ~0.667
     assert r.cs_density == round(2 / 3, 4)
+    assert r.cs_bucket == "mid"  # 0.6667 < 0.67 boundary -> mid
 
 
 def test_build_parser_requires_root_and_prefix():

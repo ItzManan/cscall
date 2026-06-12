@@ -14,7 +14,7 @@ import argparse
 import os
 
 from cscall.finetune.dataset import write_manifest
-from cscall.finetune.cs_density import code_switch_density
+from cscall.finetune.cs_density import code_switch_density, cs_bucket
 from cscall.manifest import Utterance
 
 # Maps our split name -> (transcript filename substring, audio subdir).
@@ -60,6 +60,7 @@ def build_split_rows(root: str, split: str, lang: str = "hi-en") -> list[Utteran
                 continue
             wav, text = parsed
             stem = wav[:-4] if wav.endswith(".wav") else wav
+            density = code_switch_density(text)
             rows.append(
                 Utterance(
                     id=stem,
@@ -68,7 +69,8 @@ def build_split_rows(root: str, split: str, lang: str = "hi-en") -> list[Utteran
                     speaker=stem[:4],  # HiACC PID prefix, e.g. AD09001 -> AD09
                     lang=lang,
                     accent=None,
-                    cs_density=round(code_switch_density(text), 4),
+                    cs_density=round(density, 4),
+                    cs_bucket=cs_bucket(density),
                 )
             )
     return rows
