@@ -13,6 +13,10 @@ def score(references: list[str], hypotheses: list[str]) -> dict:
         raise ValueError(
             f"reference/hypothesis count mismatch: {len(references)} vs {len(hypotheses)}"
         )
+    if not references:
+        # jiwer divides by total reference words; guard the empty corpus so an
+        # empty group (e.g. an accent bucket with no rows) returns 0 cleanly.
+        return {"wer": 0.0, "cer": 0.0, "n": 0}
     refs = [normalize_text(r) for r in references]
     hyps = [normalize_text(h) for h in hypotheses]
     return {

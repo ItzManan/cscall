@@ -32,3 +32,8 @@ def test_mismatched_lengths_raises():
     import pytest
     with pytest.raises(ValueError):
         score(["a"], ["a", "b"])
+
+
+def test_empty_corpus_returns_zero():
+    r = score([], [])
+    assert r == {"wer": 0.0, "cer": 0.0, "n": 0}
