@@ -67,8 +67,8 @@ def test_all_devanagari_is_one():
 
 
 def test_half_and_half():
-    # 2 of 4 tokens Devanagari
-    assert code_switch_density("order खाना is ready") == 0.5
+    # 2 of 4 tokens Devanagari (खाना, है)
+    assert code_switch_density("order खाना है ready") == 0.5
 
 
 def test_empty_is_zero():
