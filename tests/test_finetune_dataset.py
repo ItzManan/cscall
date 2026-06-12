@@ -27,3 +27,16 @@ def test_split_test_frac_size():
     utts = load_manifest("tests/fixtures/mini_manifest.jsonl")
     _, test = split_manifest(utts, test_frac=0.34, seed=0)
     assert len(test) == 1  # round(3 * 0.34) == 1
+
+
+def test_write_manifest_roundtrips(tmp_path):
+    from cscall.finetune.dataset import write_manifest
+    from cscall.manifest import load_manifest
+    utts = load_manifest("tests/fixtures/mini_manifest.jsonl")
+    out = tmp_path / "rt.jsonl"
+    write_manifest(utts, str(out))
+    reloaded = load_manifest(str(out))
+    assert [u.id for u in reloaded] == [u.id for u in utts]
+    assert reloaded[0].text == utts[0].text
+    assert reloaded[0].cs_density == utts[0].cs_density
+    assert reloaded[0].speaker == utts[0].speaker

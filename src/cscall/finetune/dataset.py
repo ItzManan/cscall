@@ -3,9 +3,18 @@
 A training record is the minimal {audio_path, text} the Colab training loop needs;
 keeping it tiny avoids coupling the GPU loop to the full Utterance schema.
 """
+import json
 import random
+from dataclasses import asdict
 
 from cscall.manifest import Utterance
+
+
+def write_manifest(utterances: list[Utterance], path: str) -> None:
+    """Serialize Utterances to a JSONL manifest (inverse of load_manifest)."""
+    with open(path, "w", encoding="utf-8") as fh:
+        for u in utterances:
+            fh.write(json.dumps(asdict(u), ensure_ascii=False) + "\n")
 
 
 def to_training_records(utterances: list[Utterance]) -> list[dict]:
