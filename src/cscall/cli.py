@@ -3,6 +3,7 @@ import argparse
 import json
 
 from cscall.asr_baseline import WhisperTranscriber
+from cscall.compare import compare_models, render_comparison_markdown
 from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
 
@@ -16,6 +17,13 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--model", default="small")
     b.add_argument("--group-by", dest="group_by", default=None)
     b.add_argument("--compute-type", dest="compute_type", default="int8")
+
+    c = sub.add_parser("compare", help="baseline vs fine-tuned WER on a manifest")
+    c.add_argument("--manifest", required=True)
+    c.add_argument("--baseline-model", dest="baseline_model", default="small")
+    c.add_argument("--finetuned-ct2", dest="finetuned_ct2", required=True)
+    c.add_argument("--group-by", dest="group_by", default=None)
+    c.add_argument("--compute-type", dest="compute_type", default="int8")
     return parser
 
 
@@ -29,6 +37,18 @@ def main(argv: list[str] | None = None) -> None:
         report = run_eval(utts, transcriber.transcribe, group_by=args.group_by)
         print(render_markdown(report))
         print("\nJSON:\n" + json.dumps(report, indent=2))
+    elif args.command == "compare":
+        utts = load_manifest(args.manifest)
+        baseline = WhisperTranscriber(
+            model_size=args.baseline_model, compute_type=args.compute_type
+        )
+        finetuned = WhisperTranscriber(
+            model_size=args.finetuned_ct2, compute_type=args.compute_type
+        )
+        result = compare_models(
+            utts, baseline.transcribe, finetuned.transcribe, group_by=args.group_by
+        )
+        print(render_comparison_markdown(result))
 
 
 if __name__ == "__main__":
