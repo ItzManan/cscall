@@ -3,7 +3,7 @@ from data.build_svarah_manifest import build_utterance, build_parser
 
 def test_build_utterance_maps_fields():
     ex = {"text": " Hello world ", "native_place_state": "Kerala"}
-    u = build_utterance(7, ex, "data/raw/svarah")
+    u = build_utterance(7, ex, "data/raw/svarah/svarah_00007.wav")
     assert u.id == "svarah_00007"
     assert u.audio_path == "data/raw/svarah/svarah_00007.wav"
     assert u.text == "Hello world"
@@ -14,7 +14,7 @@ def test_build_utterance_maps_fields():
 
 
 def test_build_utterance_handles_missing_fields():
-    u = build_utterance(0, {}, "d")
+    u = build_utterance(0, {}, "d/svarah_00000.wav")
     assert u.text == ""
     assert u.accent is None
 
