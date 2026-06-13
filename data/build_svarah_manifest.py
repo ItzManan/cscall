@@ -58,23 +58,27 @@ def main(argv=None) -> None:
     os.makedirs(os.path.dirname(args.out_manifest) or ".", exist_ok=True)
 
     ds = load_dataset("ai4bharat/Svarah", split=args.split, streaming=True)
-    # datasets<4 decodes audio via soundfile (no torchcodec). Cast to 16 kHz so the
-    # written wavs are pipeline-native.
-    ds = ds.cast_column("audio", Audio(sampling_rate=16000))
+    # Svarah stores audio under the "audio_filepath" Audio feature (not "audio").
+    # datasets<4 decodes via soundfile (no torchcodec); cast to 16 kHz wav-native.
+    ds = ds.cast_column("audio_filepath", Audio(sampling_rate=16000))
 
     rows: list[Utterance] = []
     for i, ex in enumerate(ds):
         if args.limit and i >= args.limit:
             break
-        a = ex["audio"]
+        a = ex["audio_filepath"]
         audio_path = os.path.join(args.audio_dir, f"svarah_{i:05d}.wav")
         sf.write(audio_path, a["array"], a["sampling_rate"])
         rows.append(build_utterance(i, ex, audio_path))
         if (i + 1) % 100 == 0:
             print(f"  ...{i + 1} clips")
     write_manifest(rows, args.out_manifest)
-    print(f"wrote {len(rows)} utterances -> {args.out_manifest}")
+    print(f"wrote {len(rows)} utterances -> {args.out_manifest}", flush=True)
 
 
 if __name__ == "__main__":
     main()
+    # HF `datasets` streaming leaves an HTTP-pool thread alive, so a normal return
+    # hangs at interpreter exit even though all work is done. Force a clean exit.
+    import os
+    os._exit(0)
