@@ -17,6 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--model", default="small")
     b.add_argument("--group-by", dest="group_by", default=None)
     b.add_argument("--compute-type", dest="compute_type", default="int8")
+    b.add_argument("--device", default="cpu", help="cpu or cuda")
 
     c = sub.add_parser("compare", help="baseline vs fine-tuned WER on a manifest")
     c.add_argument("--manifest", required=True)
@@ -24,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--finetuned-ct2", dest="finetuned_ct2", required=True)
     c.add_argument("--group-by", dest="group_by", default=None)
     c.add_argument("--compute-type", dest="compute_type", default="int8")
+    c.add_argument("--device", default="cpu", help="cpu or cuda")
     return parser
 
 
@@ -32,7 +34,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "baseline":
         utts = load_manifest(args.manifest)
         transcriber = WhisperTranscriber(
-            model_size=args.model, compute_type=args.compute_type
+            model_size=args.model, device=args.device, compute_type=args.compute_type
         )
         report = run_eval(utts, transcriber.transcribe, group_by=args.group_by)
         print(render_markdown(report))
@@ -40,10 +42,12 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "compare":
         utts = load_manifest(args.manifest)
         baseline = WhisperTranscriber(
-            model_size=args.baseline_model, compute_type=args.compute_type
+            model_size=args.baseline_model, device=args.device,
+            compute_type=args.compute_type
         )
         finetuned = WhisperTranscriber(
-            model_size=args.finetuned_ct2, compute_type=args.compute_type
+            model_size=args.finetuned_ct2, device=args.device,
+            compute_type=args.compute_type
         )
         result = compare_models(
             utts, baseline.transcribe, finetuned.transcribe, group_by=args.group_by

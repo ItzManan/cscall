@@ -19,6 +19,25 @@ def test_model_defaults_to_small():
     assert args.group_by is None
 
 
+def test_device_defaults_to_cpu():
+    parser = build_parser()
+    base = parser.parse_args(["baseline", "--manifest", "m.jsonl"])
+    cmp = parser.parse_args(
+        ["compare", "--manifest", "m.jsonl", "--finetuned-ct2", "out/ct2"]
+    )
+    assert base.device == "cpu"
+    assert cmp.device == "cpu"
+
+
+def test_device_can_be_set_to_cuda():
+    parser = build_parser()
+    args = parser.parse_args(
+        ["compare", "--manifest", "m.jsonl", "--finetuned-ct2", "out/ct2",
+         "--device", "cuda"]
+    )
+    assert args.device == "cuda"
+
+
 def test_compare_subcommand_parses():
     parser = build_parser()
     args = parser.parse_args(
