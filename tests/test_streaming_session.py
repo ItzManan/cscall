@@ -109,6 +109,39 @@ def test_streaming_session_preserves_decode_cadence_remainder():
     assert calls == [b"abc", b"abcd"]
 
 
+def test_streaming_session_slow_decode_skips_one_intermediate_but_still_finalizes():
+    calls = []
+
+    def transcribe(audio: bytes) -> str:
+        calls.append(audio)
+        return "slow"
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=100,
+        agreement=2,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=200)
+        ),
+        decode_ms=150,
+    )
+
+    events = []
+    for chunk in [
+        AudioChunk(timestamp_ms=100, duration_ms=100, data=b"a", is_speech=True),
+        AudioChunk(timestamp_ms=200, duration_ms=100, data=b"b", is_speech=True),
+        AudioChunk(timestamp_ms=300, duration_ms=100, data=b"c", is_speech=True),
+        AudioChunk(timestamp_ms=400, duration_ms=100, data=b"d", is_speech=True),
+        AudioChunk(timestamp_ms=500, duration_ms=100, data=b"", is_speech=False),
+        AudioChunk(timestamp_ms=600, duration_ms=100, data=b"", is_speech=False),
+    ]:
+        events.extend(session.update(chunk))
+
+    assert len(calls) == 3
+    assert calls == [b"a", b"abc", b"abcd"]
+    assert any(event.type == "final" for event in events)
+
+
 def test_streaming_session_resets_after_endpoint_and_handles_second_utterance():
     hypotheses = iter(["alpha", "beta"])
 

@@ -49,6 +49,8 @@ class StreamingSession:
         self._buffer = bytearray()
         self._buffer_ms = 0
         self._audio_since_decode_ms = 0
+        self._skip_next_decode = False
+        self._skip_decode_debt = False
         self._in_utterance = False
         self._final_text = ""
 
@@ -68,8 +70,15 @@ class StreamingSession:
             self._audio_since_decode_ms += chunk.duration_ms
 
             if self._audio_since_decode_ms >= self._step_ms:
-                events.extend(self._decode(chunk.timestamp_ms))
-                self._audio_since_decode_ms -= self._step_ms
+                if self._skip_next_decode:
+                    self._skip_next_decode = False
+                    self._skip_decode_debt = True
+                    self._audio_since_decode_ms -= self._step_ms
+                else:
+                    events.extend(self._decode(chunk.timestamp_ms))
+                    self._audio_since_decode_ms -= self._step_ms
+                    if self._skip_decode_debt:
+                        self._audio_since_decode_ms -= self._step_ms
 
         if any(event.type == "endpoint" for event in endpoint_events):
             events.extend(self._finalize(chunk.timestamp_ms))
@@ -81,6 +90,8 @@ class StreamingSession:
         self._buffer.clear()
         self._buffer_ms = 0
         self._audio_since_decode_ms = 0
+        self._skip_next_decode = False
+        self._skip_decode_debt = False
         self._in_utterance = True
         self._final_text = ""
         self._metrics.mark_utterance_start(timestamp_ms)
@@ -116,11 +127,14 @@ class StreamingSession:
                 )
             )
 
+        if self._metrics.snapshot().rtf > 1:
+            self._skip_next_decode = True
+
         return events
 
     def _finalize(self, timestamp_ms: int) -> list[StreamingEvent]:
         events: list[StreamingEvent] = []
-        if self._buffer and self._audio_since_decode_ms > 0:
+        if self._buffer and (self._audio_since_decode_ms > 0 or self._skip_decode_debt):
             events.extend(self._decode(timestamp_ms))
             self._audio_since_decode_ms = 0
 
@@ -149,6 +163,8 @@ class StreamingSession:
         self._buffer.clear()
         self._buffer_ms = 0
         self._audio_since_decode_ms = 0
+        self._skip_next_decode = False
+        self._skip_decode_debt = False
         self._in_utterance = False
         self._final_text = ""
         return events
