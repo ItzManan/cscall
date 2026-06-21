@@ -1,4 +1,4 @@
-"""CLI for baseline, compare, and streaming demo workflows."""
+"""CLI for baseline, compare, streaming demo, and speaker fusion workflows."""
 import argparse
 import json
 import os
@@ -7,6 +7,8 @@ import wave
 
 from cscall.asr_baseline import WhisperTranscriber
 from cscall.compare import compare_models, render_comparison_markdown
+from cscall.diarization import PyannoteDiarizer, diarization_error_rate, load_rttm
+from cscall.fusion import fuse_words, render_speaker_transcript
 from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
 from cscall.streaming.audio import WavInfo, is_speech_pcm, validate_pcm_wav
@@ -51,6 +53,28 @@ def _add_stream_args(parser: argparse.ArgumentParser) -> None:
         default=200,
     )
     parser.add_argument("--fake-transcript", dest="fake_transcript", default=None)
+
+
+def _add_speaker_model_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--model", default="small")
+    parser.add_argument("--compute-type", dest="compute_type", default="int8")
+    parser.add_argument("--device", default="cpu", help="cpu or cuda")
+    parser.add_argument("--language", default=None)
+
+
+def _add_diarize_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("diarize", help="run two-speaker diarization on a WAV")
+    parser.add_argument("--audio", required=True)
+    parser.add_argument("--reference-rttm", dest="reference_rttm", default=None)
+
+
+def _add_transcribe_speakers_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "transcribe-speakers",
+        help="transcribe a WAV with speaker attribution",
+    )
+    parser.add_argument("--audio", required=True)
+    _add_speaker_model_args(parser)
 
 
 def _add_stream_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -127,6 +151,38 @@ def _benchmark_audio_paths(args: argparse.Namespace) -> list[str]:
     if args.manifest is not None:
         return [utterance.audio_path for utterance in load_manifest(args.manifest)]
     return list(args.audio)
+
+
+def _print_diarization(turns) -> None:
+    for turn in turns:
+        print(f"{turn.start:.3f}\t{turn.end:.3f}\t{turn.speaker}")
+
+
+def _run_diarize(args: argparse.Namespace) -> None:
+    validate_pcm_wav(args.audio)
+    diarizer = PyannoteDiarizer()
+    turns = diarizer.diarize(args.audio)
+    _print_diarization(turns)
+    if args.reference_rttm is not None:
+        reference = load_rttm(args.reference_rttm)
+        score = diarization_error_rate(reference, turns)
+        print(f"DER: {score * 100:.2f}%")
+
+
+def _run_transcribe_speakers(args: argparse.Namespace) -> None:
+    validate_pcm_wav(args.audio)
+    transcriber = WhisperTranscriber(
+        model_size=args.model,
+        device=args.device,
+        compute_type=args.compute_type,
+        language=args.language,
+    )
+    diarizer = PyannoteDiarizer()
+    words = transcriber.transcribe_words(args.audio)
+    turns = diarizer.diarize(args.audio)
+    rendered = render_speaker_transcript(fuse_words(words, turns))
+    if rendered:
+        print(rendered)
 
 
 def _build_transcribe(args, wav_info: WavInfo, transcriber: WhisperTranscriber | None = None):
@@ -286,6 +342,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--device", default="cpu", help="cpu or cuda")
     c.add_argument("--language", default=None)
 
+    _add_diarize_parser(sub)
+    _add_transcribe_speakers_parser(sub)
     _add_stream_parser(sub)
     _add_benchmark_parser(sub)
     return parser
@@ -326,6 +384,10 @@ def main(argv: list[str] | None = None) -> None:
         _run_stream(args)
     elif args.command == "benchmark":
         _run_benchmark(args)
+    elif args.command == "diarize":
+        _run_diarize(args)
+    elif args.command == "transcribe-speakers":
+        _run_transcribe_speakers(args)
 
 
 if __name__ == "__main__":
