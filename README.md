@@ -111,3 +111,34 @@ python -m cscall.cli diarize --audio call.wav --reference-rttm call.rttm
 # Transcribe and attribute speakers for a local audio file
 python -m cscall.cli transcribe-speakers --audio call.wav --model small
 ```
+
+## Phase 4: upload transcript UI
+
+Phase 4 adds an upload-based browser UI for saved WAV files. It transcribes and
+diarizes locally; after the model downloads complete, the upload flow runs
+offline against the local file and shows timestamped speaker turns plus timing
+metrics in the browser.
+
+Install the extra dependencies with:
+
+```bash
+pip install -e ".[dev,diarization]"
+```
+
+Before starting the server, set `HF_TOKEN` in your shell to a valid Hugging
+Face access token. Do not paste a real token into docs or commands. For example:
+
+```bash
+export HF_TOKEN=hf_your_token_here
+```
+
+Launch the UI with:
+
+```bash
+python -m cscall.cli ui --host 127.0.0.1 --port 8000 --model small
+```
+
+Then open the printed URL, upload a WAV, and wait for the transcript. The
+browser shows timestamped speaker turns and timing metrics (processing time,
+audio duration, and RTF). Live microphone capture and WebSocket transcription
+are planned for Phase 5 and are not present in this phase.
