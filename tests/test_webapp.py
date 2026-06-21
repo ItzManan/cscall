@@ -553,9 +553,6 @@ def test_full_upload_ui_html_includes_accessible_controls_and_safe_client_logic(
     assert 'accept=".wav,audio/wav"' in lower
     assert 'aria-live="polite"' in lower
     assert 'role="status"' in lower
-    assert 'id="processing-ms"' in lower
-    assert 'id="audio-seconds"' in lower
-    assert 'id="rtf"' in lower
     assert 'id="transcript-list"' in lower
     assert "speaker-a" in lower
     assert "speaker-b" in lower
@@ -571,6 +568,10 @@ def test_full_upload_ui_html_includes_accessible_controls_and_safe_client_logic(
     assert "<link rel=" not in lower
     assert "http://" not in lower
     assert "https://" not in lower
+    assert "function clearResults()" in html
+    assert "clearResults();" in html
+    assert html.index("clearResults();") < html.index("fetch(\"/api/transcribe\"")
+    assert '<dl id="metrics" class="metrics" hidden></dl>' in lower
 
 
 def test_http_get_root_returns_full_upload_ui_html_by_default():
@@ -582,6 +583,25 @@ def test_http_get_root_returns_full_upload_ui_html_by_default():
     assert response.status == 200
     assert response.getheader("Content-Type") == "text/html; charset=utf-8"
     assert payload.decode() == webapp.FULL_UPLOAD_UI_HTML
+
+
+def test_full_upload_ui_html_accepts_case_insensitive_wav_filenames_and_rejects_mime_only():
+    html = webapp.FULL_UPLOAD_UI_HTML
+    lower = html.lower()
+
+    assert '.wav' in lower
+    assert "accept=\".wav,audio/wav\"" in lower
+    assert "file.name" in html
+    assert ".type === \"audio/wav\"" not in html
+    assert "file.type" not in html
+
+
+def test_full_upload_ui_html_rejects_array_payloads_before_rendering():
+    html = webapp.FULL_UPLOAD_UI_HTML
+
+    assert "!Array.isArray(payload)" in html
+    assert "Array.isArray(payload)" in html
+    assert "Unexpected response from server." in html
 
 
 def test_http_health_and_routes_return_json_html_and_404():

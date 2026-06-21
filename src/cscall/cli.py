@@ -90,7 +90,14 @@ def run_server(
     )
     server = server_factory(host, port, service)
     actual_host, actual_port = server.server_address[:2]
-    print(f"http://{actual_host}:{actual_port}")
+    display_host = actual_host
+    if actual_host == "0.0.0.0":
+        display_host = "127.0.0.1"
+    elif actual_host == "::":
+        display_host = "[::1]"
+    elif ":" in str(actual_host) and not str(actual_host).startswith("["):
+        display_host = f"[{actual_host}]"
+    print(f"http://{display_host}:{actual_port}")
     try:
         try:
             server.serve_forever()

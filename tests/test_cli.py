@@ -350,6 +350,55 @@ def test_run_server_uses_lazy_model_factories_and_closes_on_keyboard_interrupt(
 
 
 @pytest.mark.parametrize(
+    ("bound_host", "expected_url"),
+    [("0.0.0.0", "http://127.0.0.1:8123"), ("::", "http://[::1]:8123")],
+)
+def test_run_server_prints_a_usable_loopback_url_for_wildcard_bindings(
+    monkeypatch, capsys, bound_host: str, expected_url: str
+):
+    class FakeWhisperTranscriber:
+        def __init__(
+            self,
+            model_size: str = "small",
+            device: str = "cpu",
+            compute_type: str = "int8",
+            language: str | None = None,
+        ):
+            pass
+
+    class FakePyannoteDiarizer:
+        def __init__(self):
+            pass
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", FakeWhisperTranscriber)
+    monkeypatch.setattr(cli, "PyannoteDiarizer", FakePyannoteDiarizer)
+
+    class FakeServer:
+        def __init__(self, service):
+            self.service = service
+            self.server_address = (bound_host, 8123)
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    cli.run_server(
+        bound_host,
+        8123,
+        "small",
+        "cpu",
+        "int8",
+        None,
+        server_factory=lambda host, port, service: FakeServer(service),
+    )
+
+    output = capsys.readouterr().out.strip().splitlines()
+    assert output == [expected_url]
+
+
+@pytest.mark.parametrize(
     ("argv", "flag"),
     [
         (["stream", "--audio", "tests/fixtures/audio/a.wav", "--chunk-ms", "0"], "--chunk-ms"),

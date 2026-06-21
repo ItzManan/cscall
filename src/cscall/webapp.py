@@ -342,20 +342,7 @@ FULL_UPLOAD_UI_HTML = r"""<!doctype html>
       <div class="results-header">
         <h2 id="results-heading">Results</h2>
       </div>
-      <dl id="metrics" class="metrics" hidden>
-        <div class="metric">
-          <dt>Processing</dt>
-          <dd id="processing-ms"></dd>
-        </div>
-        <div class="metric">
-          <dt>Audio</dt>
-          <dd id="audio-seconds"></dd>
-        </div>
-        <div class="metric">
-          <dt>RTF</dt>
-          <dd id="rtf"></dd>
-        </div>
-      </dl>
+      <dl id="metrics" class="metrics" hidden></dl>
       <ol id="transcript-list" class="transcript-list" hidden></ol>
     </section>
   </main>
@@ -371,6 +358,13 @@ FULL_UPLOAD_UI_HTML = r"""<!doctype html>
 
       function setStatus(message) {
         status.textContent = message;
+      }
+
+      function clearResults() {
+        metrics.replaceChildren();
+        transcriptList.replaceChildren();
+        metrics.hidden = true;
+        transcriptList.hidden = true;
       }
 
       function formatTimestamp(seconds) {
@@ -469,6 +463,10 @@ FULL_UPLOAD_UI_HTML = r"""<!doctype html>
         transcriptList.hidden = false;
       }
 
+      function isPlainResult(payload) {
+        return !!payload && typeof payload === "object" && !Array.isArray(payload);
+      }
+
       async function handleSubmit(event) {
         event.preventDefault();
 
@@ -479,13 +477,14 @@ FULL_UPLOAD_UI_HTML = r"""<!doctype html>
           return;
         }
 
-        const isWav = file.type === "audio/wav" || /\.wav$/i.test(file.name || "");
+        const isWav = /\.wav$/i.test(file.name || "");
         if (!isWav) {
           setStatus("Please choose a WAV file.");
           fileInput.focus();
           return;
         }
 
+        clearResults();
         const originalButtonText = submitButton.textContent;
         submitButton.disabled = true;
         fileInput.disabled = true;
@@ -519,7 +518,7 @@ FULL_UPLOAD_UI_HTML = r"""<!doctype html>
             return;
           }
 
-          if (!payload || typeof payload !== "object") {
+          if (!isPlainResult(payload)) {
             setStatus("Unexpected response from server.");
             return;
           }
@@ -539,11 +538,9 @@ FULL_UPLOAD_UI_HTML = r"""<!doctype html>
       form.addEventListener("submit", handleSubmit);
     })();
   </script>
-</body>
+    </body>
 </html>
 """
-
-_PLACEHOLDER_HTML = FULL_UPLOAD_UI_HTML
 
 
 class RequestError(ValueError):
