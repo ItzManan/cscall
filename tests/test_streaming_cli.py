@@ -7,6 +7,139 @@ from cscall.streaming.metrics import StreamingMetrics
 from cscall.streaming.session import StreamingEvent
 
 
+class RecordingTranscriber:
+    def __init__(self, calls, **kwargs):
+        calls.append(kwargs)
+
+    def transcribe(self, audio_path: str) -> str:
+        return f"transcribed:{audio_path}"
+
+
+def test_baseline_forwards_language_to_whisper_transcriber(monkeypatch, capsys):
+    calls = []
+
+    def fake_whisper_transcriber(*args, **kwargs):
+        return RecordingTranscriber(calls, **kwargs)
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", fake_whisper_transcriber)
+    monkeypatch.setattr(cli, "render_markdown", lambda report: "baseline")
+
+    cli.main(
+        [
+            "baseline",
+            "--manifest",
+            "tests/fixtures/mini_manifest.jsonl",
+            "--language",
+            "hi",
+        ]
+    )
+
+    capsys.readouterr()
+    assert calls == [
+        {"model_size": "small", "device": "cpu", "compute_type": "int8", "language": "hi"}
+    ]
+
+
+def test_compare_forwards_language_to_both_whisper_transcribers(monkeypatch, capsys):
+    calls = []
+
+    def fake_whisper_transcriber(*args, **kwargs):
+        return RecordingTranscriber(calls, **kwargs)
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", fake_whisper_transcriber)
+    monkeypatch.setattr(cli, "render_comparison_markdown", lambda result: "compare")
+
+    cli.main(
+        [
+            "compare",
+            "--manifest",
+            "tests/fixtures/mini_manifest.jsonl",
+            "--finetuned-ct2",
+            "out/ct2",
+            "--language",
+            "hi",
+        ]
+    )
+
+    capsys.readouterr()
+    assert calls == [
+        {"model_size": "small", "device": "cpu", "compute_type": "int8", "language": "hi"},
+        {"model_size": "out/ct2", "device": "cpu", "compute_type": "int8", "language": "hi"},
+    ]
+
+
+def test_stream_forwards_language_to_whisper_transcriber(monkeypatch, capsys):
+    calls = []
+
+    def fake_whisper_transcriber(*args, **kwargs):
+        return RecordingTranscriber(calls, **kwargs)
+
+    def fake_validate_pcm_wav(path):
+        return cli.WavInfo(sample_rate=8000, channels=1, sample_width=2)
+
+    def fake_iter_wav_chunks(audio_path, chunk_ms, energy_threshold=200):
+        return [], (8000, 1, 2)
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", fake_whisper_transcriber)
+    monkeypatch.setattr(cli, "validate_pcm_wav", fake_validate_pcm_wav)
+    monkeypatch.setattr(cli, "_iter_wav_chunks", fake_iter_wav_chunks)
+
+    cli.main(
+        [
+            "stream",
+            "--audio",
+            str(Path("tests/fixtures/audio/a.wav")),
+            "--language",
+            "hi",
+        ]
+    )
+
+    capsys.readouterr()
+    assert calls == [
+        {"model_size": "small", "device": "cpu", "compute_type": "int8", "language": "hi"}
+    ]
+
+
+def test_benchmark_forwards_language_to_shared_whisper_transcriber(
+    monkeypatch, capsys
+):
+    calls = []
+    seen_transcribers = []
+
+    def fake_whisper_transcriber(*args, **kwargs):
+        transcriber = RecordingTranscriber(calls, **kwargs)
+        seen_transcribers.append(transcriber)
+        return transcriber
+
+    def fake_validate_pcm_wav(path):
+        return cli.WavInfo(sample_rate=8000, channels=1, sample_width=2)
+
+    def fake_run_stream_session(*call_args, **call_kwargs):
+        seen_transcribers.append(call_kwargs["transcriber"])
+        return []
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", fake_whisper_transcriber)
+    monkeypatch.setattr(cli, "validate_pcm_wav", fake_validate_pcm_wav)
+    monkeypatch.setattr(cli, "_run_stream_session", fake_run_stream_session)
+
+    cli.main(
+        [
+            "benchmark",
+            "--audio",
+            str(Path("tests/fixtures/audio/a.wav")),
+            str(Path("tests/fixtures/audio/b.wav")),
+            "--language",
+            "hi",
+        ]
+    )
+
+    capsys.readouterr()
+    assert calls == [
+        {"model_size": "small", "device": "cpu", "compute_type": "int8", "language": "hi"}
+    ]
+    assert seen_transcribers[0] is seen_transcribers[1] is seen_transcribers[2]
+
+
 def test_stream_fake_transcript_runs_without_instantiating_whisper(
     monkeypatch, capsys
 ):

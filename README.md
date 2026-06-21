@@ -46,9 +46,30 @@ The Phase 2 CLI adds a local streaming smoke test over a WAV file. It chunks the
 audio, runs the existing streaming session, and prints `stable`, `partial`,
 `final`, and metrics lines.
 
+Language auto-detection remains the default; `--language` is only for forced
+runs when you want reproducible language-specific behavior. For a native Mac
+demo, start with `--model small` and drop to `tiny` if the small model's real-
+time factor is still above 1. For the portable benchmark path, use
+`--device cpu --compute-type int8`. Docker packaging is intentionally deferred
+to Phase 5.
+
+`benchmark` accepts either one or more WAV paths via `--audio` or a JSONL
+manifest via `--manifest`.
+
 ```bash
+# Fast model-free smoke test
 python -m cscall.cli stream --audio tests/fixtures/audio/a.wav \
     --fake-transcript "hello world"
+
+# Native Mac demo; use tiny if small has RTF > 1
+python -m cscall.cli stream --audio call.wav --model small
+
+# Portable CPU benchmark/default intended for Docker
+python -m cscall.cli benchmark --audio call.wav --model tiny \
+    --device cpu --compute-type int8
+
+# Reproducible forced-language experiment
+python -m cscall.cli stream --audio call.wav --language hi
 ```
 
 `--fake-transcript` keeps the command model-free for demos and tests. When it is

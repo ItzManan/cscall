@@ -29,6 +29,7 @@ def _add_stream_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--agreement", type=int, default=2)
     parser.add_argument("--compute-type", dest="compute_type", default="int8")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--language", default=None)
     parser.add_argument("--energy-threshold", dest="energy_threshold", type=int, default=200)
     parser.add_argument("--fake-transcript", dest="fake_transcript", default=None)
 
@@ -118,7 +119,10 @@ def _build_transcribe(args, wav_info: WavInfo, transcriber: WhisperTranscriber |
         return transcribe
 
     model = transcriber or WhisperTranscriber(
-        model_size=args.model, device=args.device, compute_type=args.compute_type
+        model_size=args.model,
+        device=args.device,
+        compute_type=args.compute_type,
+        language=args.language,
     )
     return _build_wav_transcribe(model, wav_info)
 
@@ -213,7 +217,10 @@ def _run_benchmark(args: argparse.Namespace) -> None:
     transcriber = None
     if audio_paths and args.fake_transcript is None:
         transcriber = WhisperTranscriber(
-            model_size=args.model, device=args.device, compute_type=args.compute_type
+            model_size=args.model,
+            device=args.device,
+            compute_type=args.compute_type,
+            language=args.language,
         )
 
     metrics = []
@@ -240,6 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--group-by", dest="group_by", default=None)
     b.add_argument("--compute-type", dest="compute_type", default="int8")
     b.add_argument("--device", default="cpu", help="cpu or cuda")
+    b.add_argument("--language", default=None)
 
     c = sub.add_parser("compare", help="baseline vs fine-tuned WER on a manifest")
     c.add_argument("--manifest", required=True)
@@ -248,6 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--group-by", dest="group_by", default=None)
     c.add_argument("--compute-type", dest="compute_type", default="int8")
     c.add_argument("--device", default="cpu", help="cpu or cuda")
+    c.add_argument("--language", default=None)
 
     _add_stream_parser(sub)
     _add_benchmark_parser(sub)
@@ -259,7 +268,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "baseline":
         utts = load_manifest(args.manifest)
         transcriber = WhisperTranscriber(
-            model_size=args.model, device=args.device, compute_type=args.compute_type
+            model_size=args.model,
+            device=args.device,
+            compute_type=args.compute_type,
+            language=args.language,
         )
         report = run_eval(utts, transcriber.transcribe, group_by=args.group_by)
         print(render_markdown(report))
@@ -267,12 +279,16 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "compare":
         utts = load_manifest(args.manifest)
         baseline = WhisperTranscriber(
-            model_size=args.baseline_model, device=args.device,
-            compute_type=args.compute_type
+            model_size=args.baseline_model,
+            device=args.device,
+            compute_type=args.compute_type,
+            language=args.language,
         )
         finetuned = WhisperTranscriber(
-            model_size=args.finetuned_ct2, device=args.device,
-            compute_type=args.compute_type
+            model_size=args.finetuned_ct2,
+            device=args.device,
+            compute_type=args.compute_type,
+            language=args.language,
         )
         result = compare_models(
             utts, baseline.transcribe, finetuned.transcribe, group_by=args.group_by

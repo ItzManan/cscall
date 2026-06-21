@@ -4,12 +4,23 @@ from cscall.cli import build_parser
 def test_baseline_subcommand_parses():
     parser = build_parser()
     args = parser.parse_args(
-        ["baseline", "--manifest", "m.jsonl", "--model", "small", "--group-by", "accent"]
+        [
+            "baseline",
+            "--manifest",
+            "m.jsonl",
+            "--model",
+            "small",
+            "--group-by",
+            "accent",
+            "--language",
+            "hi",
+        ]
     )
     assert args.command == "baseline"
     assert args.manifest == "m.jsonl"
     assert args.model == "small"
     assert args.group_by == "accent"
+    assert args.language == "hi"
 
 
 def test_model_defaults_to_small():
@@ -17,6 +28,7 @@ def test_model_defaults_to_small():
     args = parser.parse_args(["baseline", "--manifest", "m.jsonl"])
     assert args.model == "small"
     assert args.group_by is None
+    assert args.language is None
 
 
 def test_device_defaults_to_cpu():
@@ -27,6 +39,8 @@ def test_device_defaults_to_cpu():
     )
     assert base.device == "cpu"
     assert cmp.device == "cpu"
+    assert base.language is None
+    assert cmp.language is None
 
 
 def test_device_can_be_set_to_cuda():
@@ -47,6 +61,8 @@ def test_compare_subcommand_parses():
             "--baseline-model", "small",
             "--finetuned-ct2", "out/ct2",
             "--group-by", "accent",
+            "--language",
+            "hi",
         ]
     )
     assert args.command == "compare"
@@ -54,6 +70,7 @@ def test_compare_subcommand_parses():
     assert args.baseline_model == "small"
     assert args.finetuned_ct2 == "out/ct2"
     assert args.group_by == "accent"
+    assert args.language == "hi"
 
 
 def test_stream_subcommand_parses_with_defaults():
@@ -69,6 +86,7 @@ def test_stream_subcommand_parses_with_defaults():
     assert args.device == "cpu"
     assert args.energy_threshold == 200
     assert args.fake_transcript is None
+    assert args.language is None
 
 
 def test_stream_subcommand_parses_custom_options():
@@ -88,6 +106,8 @@ def test_stream_subcommand_parses_custom_options():
             "float16",
             "--device",
             "cuda",
+            "--language",
+            "hi",
             "--fake-transcript",
             "hello",
         ]
@@ -100,6 +120,7 @@ def test_stream_subcommand_parses_custom_options():
     assert args.compute_type == "float16"
     assert args.device == "cuda"
     assert args.energy_threshold == 200
+    assert args.language == "hi"
     assert args.fake_transcript == "hello"
 
 
@@ -129,6 +150,8 @@ def test_benchmark_subcommand_parses_multiple_audio_paths_and_defaults():
             "tests/fixtures/audio/b.wav",
             "--fake-transcript",
             "hello",
+            "--language",
+            "hi",
         ]
     )
 
@@ -143,6 +166,7 @@ def test_benchmark_subcommand_parses_multiple_audio_paths_and_defaults():
     assert args.compute_type == "int8"
     assert args.device == "cpu"
     assert args.energy_threshold == 200
+    assert args.language == "hi"
     assert args.fake_transcript == "hello"
 
 
@@ -161,3 +185,4 @@ def test_benchmark_subcommand_parses_manifest_path():
     assert args.command == "benchmark"
     assert args.manifest == "tests/fixtures/mini_manifest.jsonl"
     assert args.audio is None
+    assert args.language is None
