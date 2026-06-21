@@ -109,7 +109,66 @@ def test_streaming_session_preserves_decode_cadence_remainder():
     assert calls == [b"abc", b"abcd"]
 
 
-def test_streaming_session_slow_decode_keeps_cadence_counter_and_finalizes_remainder():
+def test_streaming_session_counts_unique_audio_for_growing_buffer_decodes():
+    def transcribe(_audio: bytes) -> str:
+        return "slow"
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=100,
+        agreement=2,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=200)
+        ),
+        decode_ms=0,
+    )
+
+    events = []
+    for chunk in [
+        AudioChunk(timestamp_ms=100, duration_ms=100, data=b"a", is_speech=True),
+        AudioChunk(timestamp_ms=200, duration_ms=100, data=b"b", is_speech=True),
+        AudioChunk(timestamp_ms=300, duration_ms=100, data=b"c", is_speech=True),
+        AudioChunk(timestamp_ms=400, duration_ms=100, data=b"", is_speech=False),
+        AudioChunk(timestamp_ms=500, duration_ms=100, data=b"", is_speech=False),
+    ]:
+        events.extend(session.update(chunk))
+
+    metrics = [event.metrics for event in events if event.type == "metrics"]
+    assert metrics[-1].audio_ms == 300
+
+
+def test_streaming_session_resets_metrics_between_utterances():
+    hypotheses = iter(["alpha", "beta"])
+
+    def transcribe(_audio: bytes) -> str:
+        return next(hypotheses)
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=100,
+        agreement=2,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=200)
+        ),
+        decode_ms=0,
+    )
+
+    events = []
+    for chunk in [
+        AudioChunk(timestamp_ms=100, duration_ms=100, data=b"a", is_speech=True),
+        AudioChunk(timestamp_ms=200, duration_ms=100, data=b"", is_speech=False),
+        AudioChunk(timestamp_ms=300, duration_ms=100, data=b"", is_speech=False),
+        AudioChunk(timestamp_ms=400, duration_ms=100, data=b"b", is_speech=True),
+        AudioChunk(timestamp_ms=500, duration_ms=100, data=b"", is_speech=False),
+        AudioChunk(timestamp_ms=600, duration_ms=100, data=b"", is_speech=False),
+    ]:
+        events.extend(session.update(chunk))
+
+    metrics = [event.metrics for event in events if event.type == "metrics"]
+    assert [metric.audio_ms for metric in metrics] == [100, 100]
+
+
+def test_streaming_session_slow_decode_uses_cumulative_rtf_for_backpressure():
     calls = []
 
     def transcribe(audio: bytes) -> str:
@@ -138,18 +197,12 @@ def test_streaming_session_slow_decode_keeps_cadence_counter_and_finalizes_remai
         AudioChunk(timestamp_ms=850, duration_ms=100, data=b"", is_speech=False),
         AudioChunk(timestamp_ms=950, duration_ms=100, data=b"", is_speech=False),
     ]
-    for index, chunk in enumerate(chunks):
+    for chunk in chunks:
         events.extend(session.update(chunk))
-        if index == 2:
-            assert calls == [b"a", b"abc"]
-        if index == 3:
-            assert calls == [b"a", b"abc", b"abcd"]
-        if index == 5:
-            assert calls == [b"a", b"abc", b"abcd", b"abcde", b"abcdef"]
-        if index == 6:
-            assert session._audio_since_decode_ms == 50
 
-    assert calls == [b"a", b"abc", b"abcd", b"abcde", b"abcdef", b"abcdefg", b"abcdefg"]
+    metrics = [event.metrics for event in events if event.type == "metrics"]
+    assert calls == [b"a", b"abc", b"abcd", b"abcdef", b"abcdefg", b"abcdefg"]
+    assert metrics[-1].audio_ms == 750
     assert any(event.type == "final" for event in events)
 
 

@@ -82,6 +82,7 @@ class StreamingSession:
         return events
 
     def _begin_utterance(self, timestamp_ms: int) -> None:
+        self._metrics = MetricsTracker()
         self._agreement = LocalAgreement(agreement=self._agreement_size)
         self._buffer.clear()
         self._buffer_ms = 0
@@ -96,7 +97,8 @@ class StreamingSession:
         decode_started_at = self._clock() if self._decode_ms is None else None
         hypothesis = self._transcribe(audio)
         decode_ms = self._resolve_decode_ms(audio, decode_started_at)
-        self._metrics.add_decode(audio_ms=self._buffer_ms, decode_ms=decode_ms)
+        unique_audio_ms = max(0, self._buffer_ms - self._metrics.snapshot().audio_ms)
+        self._metrics.add_decode(audio_ms=unique_audio_ms, decode_ms=decode_ms)
 
         update: AgreementUpdate = self._agreement.update(hypothesis)
         events: list[StreamingEvent] = []
