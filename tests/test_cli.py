@@ -144,3 +144,20 @@ def test_benchmark_subcommand_parses_multiple_audio_paths_and_defaults():
     assert args.device == "cpu"
     assert args.energy_threshold == 200
     assert args.fake_transcript == "hello"
+
+
+def test_benchmark_subcommand_parses_manifest_path():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "benchmark",
+            "--manifest",
+            "tests/fixtures/mini_manifest.jsonl",
+            "--fake-transcript",
+            "hello",
+        ]
+    )
+
+    assert args.command == "benchmark"
+    assert args.manifest == "tests/fixtures/mini_manifest.jsonl"
+    assert args.audio is None

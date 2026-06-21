@@ -175,3 +175,52 @@ def test_benchmark_rejects_invalid_audio_before_model_construction(monkeypatch):
                 str(Path("tests/fixtures/audio/a.wav")),
             ]
         )
+
+
+def test_benchmark_uses_manifest_audio_paths_in_order(monkeypatch, tmp_path, capsys):
+    manifest = tmp_path / "mini_manifest.jsonl"
+    manifest.write_text(
+        "\n".join(
+            [
+                '{"id": "u1", "audio_path": "tests/fixtures/audio/b.wav", "text": "one"}',
+                '{"id": "u2", "audio_path": "tests/fixtures/audio/a.wav", "text": "two"}',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    seen = []
+
+    def fake_validate_pcm_wav(path):
+        return cli.WavInfo(sample_rate=8000, channels=1, sample_width=2)
+
+    def fake_run_stream_session(*call_args, **call_kwargs):
+        seen.append(call_args[1])
+        return [
+            StreamingEvent(
+                type="metrics",
+                timestamp_ms=1,
+                metrics=StreamingMetrics(audio_ms=1000, decode_ms=100),
+            )
+        ]
+
+    monkeypatch.setattr(cli, "validate_pcm_wav", fake_validate_pcm_wav)
+    monkeypatch.setattr(cli, "_run_stream_session", fake_run_stream_session)
+
+    cli.main(
+        [
+            "benchmark",
+            "--manifest",
+            str(manifest),
+            "--fake-transcript",
+            "hello world",
+        ]
+    )
+
+    capsys.readouterr()
+
+    assert seen == [
+        "tests/fixtures/audio/b.wav",
+        "tests/fixtures/audio/a.wav",
+    ]

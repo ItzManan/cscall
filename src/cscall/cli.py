@@ -15,30 +15,15 @@ from cscall.streaming.metrics import summarize_metrics
 from cscall.streaming.session import AudioChunk, StreamingSession
 
 
-def _add_stream_parser(subparsers: argparse._SubParsersAction) -> None:
-    _add_stream_like_parser(
-        subparsers, "stream", "run the phase 2 streaming demo"
-    )
-
-
 def _add_benchmark_parser(subparsers: argparse._SubParsersAction) -> None:
-    _add_stream_like_parser(
-        subparsers,
-        "benchmark",
-        "benchmark the phase 2 streaming demo",
-        multiple_audio=True,
-    )
+    parser = subparsers.add_parser("benchmark", help="benchmark the phase 2 streaming demo")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--audio", nargs="+")
+    group.add_argument("--manifest")
+    _add_stream_args(parser)
 
 
-def _add_stream_like_parser(
-    subparsers: argparse._SubParsersAction,
-    name: str,
-    help: str,
-    *,
-    multiple_audio: bool = False,
-) -> None:
-    parser = subparsers.add_parser(name, help=help)
-    parser.add_argument("--audio", required=True, nargs="+" if multiple_audio else None)
+def _add_stream_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", default="small")
     parser.add_argument("--chunk-ms", dest="chunk_ms", type=int, default=500)
     parser.add_argument("--agreement", type=int, default=2)
@@ -46,6 +31,12 @@ def _add_stream_like_parser(
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--energy-threshold", dest="energy_threshold", type=int, default=200)
     parser.add_argument("--fake-transcript", dest="fake_transcript", default=None)
+
+
+def _add_stream_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("stream", help="run the phase 2 streaming demo")
+    parser.add_argument("--audio", required=True)
+    _add_stream_args(parser)
 
 
 def _iter_wav_chunks(
@@ -110,6 +101,12 @@ def _append_silence_chunks(
 
 def _validate_audio_inputs(audio_paths: list[str]) -> dict[str, WavInfo]:
     return {audio_path: validate_pcm_wav(audio_path) for audio_path in audio_paths}
+
+
+def _benchmark_audio_paths(args: argparse.Namespace) -> list[str]:
+    if args.manifest is not None:
+        return [utterance.audio_path for utterance in load_manifest(args.manifest)]
+    return list(args.audio)
 
 
 def _build_transcribe(args, wav_info: WavInfo, transcriber: WhisperTranscriber | None = None):
@@ -211,7 +208,8 @@ def _render_benchmark_table(summary: dict[str, dict[str, int | float | None]]) -
 
 
 def _run_benchmark(args: argparse.Namespace) -> None:
-    wav_infos = _validate_audio_inputs(args.audio)
+    audio_paths = _benchmark_audio_paths(args)
+    wav_infos = _validate_audio_inputs(audio_paths)
     transcriber = None
     if args.fake_transcript is None:
         transcriber = WhisperTranscriber(
@@ -219,7 +217,7 @@ def _run_benchmark(args: argparse.Namespace) -> None:
         )
 
     metrics = []
-    for audio_path in args.audio:
+    for audio_path in audio_paths:
         for event in _run_stream_session(
             args,
             audio_path,
