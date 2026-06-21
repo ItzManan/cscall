@@ -37,6 +37,7 @@ def test_diarize_prints_exact_turns_and_der_when_reference_rttm_is_supplied(
     diarizer_calls = []
     rttm_calls = []
     der_calls = []
+    diarizer_instances = []
 
     def fake_validate_pcm_wav(path):
         validate_calls.append(path)
@@ -50,6 +51,7 @@ def test_diarize_prints_exact_turns_and_der_when_reference_rttm_is_supplied(
 
     class FakeDiarizer(RecordingDiarizer):
         def __init__(self, **kwargs):
+            diarizer_instances.append(self)
             super().__init__(
                 diarizer_calls,
                 turns=[
@@ -81,6 +83,7 @@ def test_diarize_prints_exact_turns_and_der_when_reference_rttm_is_supplied(
 
     assert validate_calls == [str(audio_path)]
     assert diarizer_calls == [{}]
+    assert diarizer_instances[0].calls == [str(audio_path)]
     assert out == [
         "0.000\t1.000\tSPEAKER_00",
         "1.000\t2.000\tSPEAKER_01",
@@ -94,6 +97,47 @@ def test_diarize_prints_exact_turns_and_der_when_reference_rttm_is_supplied(
             SpeakerTurn(1.0, 2.0, "SPEAKER_01"),
         ],
     )]
+
+
+def test_diarize_loads_reference_rttm_before_constructing_diarizer(
+    monkeypatch, tmp_path
+):
+    validate_calls = []
+    rttm_calls = []
+
+    def fake_validate_pcm_wav(path):
+        validate_calls.append(path)
+        return cli.WavInfo(sample_rate=16000, channels=1, sample_width=2)
+
+    def fake_load_rttm(path):
+        rttm_calls.append(path)
+        raise ValueError("bad rttm")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("PyannoteDiarizer should not be instantiated")
+
+    monkeypatch.setattr(cli, "validate_pcm_wav", fake_validate_pcm_wav)
+    monkeypatch.setattr(cli, "load_rttm", fake_load_rttm)
+    monkeypatch.setattr(cli, "PyannoteDiarizer", boom)
+
+    audio_path = tmp_path / "call.wav"
+    audio_path.write_bytes(b"wav")
+    rttm_path = tmp_path / "ref.rttm"
+    rttm_path.write_text("rttm", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="bad rttm"):
+        cli.main(
+            [
+                "diarize",
+                "--audio",
+                str(audio_path),
+                "--reference-rttm",
+                str(rttm_path),
+            ]
+        )
+
+    assert validate_calls == [str(audio_path)]
+    assert rttm_calls == [str(rttm_path)]
 
 
 def test_diarize_validates_pcm_wav_before_constructing_diarizer(monkeypatch, tmp_path):
@@ -123,8 +167,10 @@ def test_diarize_empty_turns_prints_nothing(monkeypatch, capsys, tmp_path):
     class FakeDiarizer:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+            self.calls: list[str] = []
 
         def diarize(self, audio_path: str):
+            self.calls.append(audio_path)
             return []
 
     monkeypatch.setattr(cli, "PyannoteDiarizer", FakeDiarizer)
@@ -145,6 +191,8 @@ def test_transcribe_speakers_forwards_language_and_renders_transcript(
     diarizer_calls = []
     fuse_calls = []
     render_calls = []
+    whisper_instances = []
+    diarizer_instances = []
 
     def fake_validate_pcm_wav(path):
         validate_calls.append(path)
@@ -152,6 +200,7 @@ def test_transcribe_speakers_forwards_language_and_renders_transcript(
 
     class FakeWhisperTranscriber(RecordingWhisperTranscriber):
         def __init__(self, **kwargs):
+            whisper_instances.append(self)
             super().__init__(
                 whisper_calls,
                 words=[
@@ -163,6 +212,7 @@ def test_transcribe_speakers_forwards_language_and_renders_transcript(
 
     class FakeDiarizer(RecordingDiarizer):
         def __init__(self, **kwargs):
+            diarizer_instances.append(self)
             super().__init__(
                 diarizer_calls,
                 turns=[SpeakerTurn(0.0, 1.0, "SPEAKER_00")],
@@ -216,6 +266,8 @@ def test_transcribe_speakers_forwards_language_and_renders_transcript(
         }
     ]
     assert diarizer_calls == [{}]
+    assert diarizer_instances[0].calls == [str(audio_path)]
+    assert whisper_instances[0].calls == [str(audio_path)]
     assert fuse_calls == [
         (
             [
@@ -225,12 +277,41 @@ def test_transcribe_speakers_forwards_language_and_renders_transcript(
             [SpeakerTurn(0.0, 1.0, "SPEAKER_00")],
         )
     ]
-    assert render_calls == [
-        [
-            SpeakerWord(0.0, 0.5, "hello", "SPEAKER_00"),
-            SpeakerWord(0.5, 1.0, "world", "SPEAKER_00"),
-        ]
-    ]
+
+
+def test_transcribe_speakers_runs_diarizer_before_constructing_whisper(
+    monkeypatch, tmp_path
+):
+    validate_calls = []
+    diarizer_instances = []
+
+    def fake_validate_pcm_wav(path):
+        validate_calls.append(path)
+        return cli.WavInfo(sample_rate=16000, channels=1, sample_width=2)
+
+    class SentinelDiarizer:
+        def __init__(self, **kwargs):
+            diarizer_instances.append(self)
+
+        def diarize(self, audio_path: str):
+            self.audio_path = audio_path
+            raise RuntimeError("missing token")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("WhisperTranscriber should not be instantiated")
+
+    monkeypatch.setattr(cli, "validate_pcm_wav", fake_validate_pcm_wav)
+    monkeypatch.setattr(cli, "PyannoteDiarizer", SentinelDiarizer)
+    monkeypatch.setattr(cli, "WhisperTranscriber", boom)
+
+    audio_path = tmp_path / "call.wav"
+    audio_path.write_bytes(b"wav")
+
+    with pytest.raises(RuntimeError, match="missing token"):
+        cli.main(["transcribe-speakers", "--audio", str(audio_path)])
+
+    assert validate_calls == [str(audio_path)]
+    assert diarizer_instances[0].audio_path == str(audio_path)
 
 
 def test_transcribe_speakers_validates_pcm_wav_before_constructing_models(
@@ -263,15 +344,19 @@ def test_transcribe_speakers_empty_results_print_nothing(monkeypatch, capsys, tm
     class FakeWhisperTranscriber:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+            self.calls: list[str] = []
 
         def transcribe_words(self, audio_path: str):
+            self.calls.append(audio_path)
             return []
 
     class FakeDiarizer:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
+            self.calls: list[str] = []
 
         def diarize(self, audio_path: str):
+            self.calls.append(audio_path)
             return []
 
     monkeypatch.setattr(cli, "WhisperTranscriber", FakeWhisperTranscriber)

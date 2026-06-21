@@ -160,26 +160,29 @@ def _print_diarization(turns) -> None:
 
 def _run_diarize(args: argparse.Namespace) -> None:
     validate_pcm_wav(args.audio)
+    if args.reference_rttm is not None:
+        reference = load_rttm(args.reference_rttm)
+    else:
+        reference = None
     diarizer = PyannoteDiarizer()
     turns = diarizer.diarize(args.audio)
     _print_diarization(turns)
-    if args.reference_rttm is not None:
-        reference = load_rttm(args.reference_rttm)
+    if reference is not None:
         score = diarization_error_rate(reference, turns)
         print(f"DER: {score * 100:.2f}%")
 
 
 def _run_transcribe_speakers(args: argparse.Namespace) -> None:
     validate_pcm_wav(args.audio)
+    diarizer = PyannoteDiarizer()
+    turns = diarizer.diarize(args.audio)
     transcriber = WhisperTranscriber(
         model_size=args.model,
         device=args.device,
         compute_type=args.compute_type,
         language=args.language,
     )
-    diarizer = PyannoteDiarizer()
     words = transcriber.transcribe_words(args.audio)
-    turns = diarizer.diarize(args.audio)
     rendered = render_speaker_transcript(fuse_words(words, turns))
     if rendered:
         print(rendered)
