@@ -224,3 +224,28 @@ def test_benchmark_uses_manifest_audio_paths_in_order(monkeypatch, tmp_path, cap
         "tests/fixtures/audio/b.wav",
         "tests/fixtures/audio/a.wav",
     ]
+
+
+def test_benchmark_empty_manifest_does_not_instantiate_model(monkeypatch, tmp_path, capsys):
+    manifest = tmp_path / "empty_manifest.jsonl"
+    manifest.write_text("", encoding="utf-8")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("WhisperTranscriber should not be instantiated")
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", boom)
+
+    cli.main(
+        [
+            "benchmark",
+            "--manifest",
+            str(manifest),
+        ]
+    )
+
+    out = capsys.readouterr().out
+
+    assert "| Metric | p50 | p99 |" in out
+    assert "| RTF | n/a | n/a |" in out
+    assert "| first_partial_ms | n/a | n/a |" in out
+    assert "| final_ms | n/a | n/a |" in out

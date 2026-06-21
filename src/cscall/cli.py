@@ -211,7 +211,7 @@ def _run_benchmark(args: argparse.Namespace) -> None:
     audio_paths = _benchmark_audio_paths(args)
     wav_infos = _validate_audio_inputs(audio_paths)
     transcriber = None
-    if args.fake_transcript is None:
+    if audio_paths and args.fake_transcript is None:
         transcriber = WhisperTranscriber(
             model_size=args.model, device=args.device, compute_type=args.compute_type
         )
