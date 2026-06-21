@@ -403,6 +403,124 @@ def test_load_rttm_rejects_invalid_rows_with_path_and_line(
     assert reason in message
 
 
+def test_load_rttm_rejects_overflowing_end_with_path_and_line(tmp_path):
+    path = tmp_path / "overflow.rttm"
+    path.write_text(
+        "SPEAKER file-a 1 1e308 1e308 <NA> <NA> SPEAKER_00 <NA> <NA>\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        load_rttm(path)
+
+    message = str(excinfo.value)
+    assert f"{path}:1" in message
+    assert "end must be finite" in message
+
+
+def test_diarization_error_rate_uses_default_pyannote_dependencies(monkeypatch):
+    calls: list[str] = []
+
+    class FakeSegment:
+        def __init__(self, start: float, end: float):
+            calls.append(f"segment:{start}:{end}")
+            self.start = start
+            self.end = end
+
+    class FakeAnnotation:
+        def __init__(self):
+            calls.append("annotation")
+            self.assignments: list[tuple[float, float, str, str]] = []
+
+        def __setitem__(self, key, value):
+            segment, track = key
+            self.assignments.append((segment.start, segment.end, track, value))
+
+    class FakeMetric:
+        def __init__(self, *, collar, skip_overlap):
+            calls.append(f"metric-init:{collar}:{skip_overlap}")
+            self.calls: list[tuple[object, object]] = []
+
+        def __call__(self, reference, hypothesis):
+            calls.append("metric-call")
+            self.calls.append((reference, hypothesis))
+            return 0.5
+
+    fake_core = types.SimpleNamespace(
+        Annotation=FakeAnnotation,
+        Segment=FakeSegment,
+    )
+    fake_metrics = types.SimpleNamespace(DiarizationErrorRate=FakeMetric)
+
+    def fake_import(name):
+        if name == "pyannote.core":
+            return fake_core
+        if name == "pyannote.metrics.diarization":
+            return fake_metrics
+        raise AssertionError(f"unexpected import: {name}")
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
+
+    score = diarization_error_rate(
+        [SpeakerTurn(0.0, 1.0, "SPEAKER_00")],
+        [SpeakerTurn(0.0, 1.0, "SPEAKER_01")],
+    )
+
+    assert score == pytest.approx(0.5)
+    assert calls == [
+        "metric-init:0.0:False",
+        "annotation",
+        "segment:0.0:1.0",
+        "annotation",
+        "segment:0.0:1.0",
+        "metric-call",
+    ]
+
+
+def test_diarization_error_rate_keeps_falsey_injected_metric(monkeypatch):
+    class FakeAnnotationModule:
+        Annotation = FakeAnnotation
+        Segment = FakeSegment
+
+    class FakeMetricModule:
+        class DiarizationErrorRate:
+            def __init__(self, *, collar, skip_overlap):
+                self.collar = collar
+                self.skip_overlap = skip_overlap
+
+            def __call__(self, reference, hypothesis):
+                return 0.5
+
+    def fake_import(name):
+        if name == "pyannote.core":
+            return FakeAnnotationModule
+        if name == "pyannote.metrics.diarization":
+            return FakeMetricModule
+        raise AssertionError(f"unexpected import: {name}")
+
+    monkeypatch.setattr(importlib, "import_module", fake_import)
+
+    class FalseyMetric:
+        def __bool__(self):
+            return False
+
+        def __call__(self, reference, hypothesis):
+            self.reference = reference
+            self.hypothesis = hypothesis
+            return 0.75
+
+    metric = FalseyMetric()
+    score = diarization_error_rate(
+        [SpeakerTurn(0.0, 1.0, "SPEAKER_00")],
+        [SpeakerTurn(0.5, 1.5, "SPEAKER_01")],
+        metric=metric,
+    )
+
+    assert score == pytest.approx(0.75)
+    assert metric.reference.assignments == [(0.0, 1.0, "SPEAKER_00:0", "SPEAKER_00")]
+    assert metric.hypothesis.assignments == [(0.5, 1.5, "SPEAKER_01:0", "SPEAKER_01")]
+
+
 def test_diarization_error_rate_uses_injected_factories_and_metric(monkeypatch):
     monkeypatch.setattr(
         importlib,

@@ -51,7 +51,11 @@ def load_rttm(path: str) -> list[SpeakerTurn]:
                     f"{path_str}:{line_number}: speaker field must be nonempty"
                 )
 
-            turns.append(SpeakerTurn(start, start + duration, speaker))
+            end = start + duration
+            if not isfinite(end):
+                raise ValueError(f"{path_str}:{line_number}: end must be finite")
+
+            turns.append(SpeakerTurn(start, end, speaker))
 
     turns.sort(key=lambda turn: (turn.start, turn.end, turn.speaker))
     return turns
@@ -120,7 +124,11 @@ def _resolve_diarization_dependencies(
     segment_factory,
     metric,
 ):
-    if annotation_factory is not None and segment_factory is not None and metric is not None:
+    if (
+        annotation_factory is not None
+        and segment_factory is not None
+        and metric is not None
+    ):
         return annotation_factory, segment_factory, metric
 
     try:
@@ -136,9 +144,11 @@ def _resolve_diarization_dependencies(
     default_metric = metrics.DiarizationErrorRate(collar=0.0, skip_overlap=False)
 
     return (
-        annotation_factory or default_annotation_factory,
-        segment_factory or default_segment_factory,
-        metric or default_metric,
+        annotation_factory
+        if annotation_factory is not None
+        else default_annotation_factory,
+        segment_factory if segment_factory is not None else default_segment_factory,
+        metric if metric is not None else default_metric,
     )
 
 
