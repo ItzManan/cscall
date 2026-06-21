@@ -24,6 +24,17 @@ def test_rtf_uses_total_decode_over_total_audio():
     assert metrics.rtf == 0.25
 
 
+def test_rtf_p50_averages_even_sample_pair():
+    summary = summarize_metrics(
+        [
+            StreamingMetrics(audio_ms=1000, decode_ms=100),
+            StreamingMetrics(audio_ms=1000, decode_ms=300),
+        ]
+    )
+
+    assert summary["rtf"]["p50"] == 0.2
+
+
 def test_first_partial_latency_is_recorded_only_once():
     tracker = MetricsTracker()
 

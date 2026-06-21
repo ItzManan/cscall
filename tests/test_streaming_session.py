@@ -271,6 +271,57 @@ def test_streaming_session_metrics_event_uses_configured_decode_ms():
     assert metrics_events[0].metrics.decode_ms == 17
 
 
+def test_streaming_session_first_partial_includes_decode_completion_time():
+    def transcribe(_audio: bytes) -> str:
+        return "hello"
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=100,
+        agreement=1,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=100)
+        ),
+        decode_ms=25,
+    )
+
+    events = []
+    for chunk in [
+        AudioChunk(timestamp_ms=100, duration_ms=100, data=b"a", is_speech=True),
+        AudioChunk(timestamp_ms=200, duration_ms=100, data=b"", is_speech=False),
+    ]:
+        events.extend(session.update(chunk))
+
+    metrics = next(event.metrics for event in events if event.type == "metrics")
+    assert metrics.first_partial_latency_ms == 25
+
+
+def test_streaming_session_final_latency_includes_endpoint_decode_time():
+    def transcribe(_audio: bytes) -> str:
+        return "done"
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=500,
+        agreement=2,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=200)
+        ),
+        decode_ms=40,
+    )
+
+    events = []
+    for chunk in [
+        AudioChunk(timestamp_ms=100, duration_ms=100, data=b"a", is_speech=True),
+        AudioChunk(timestamp_ms=200, duration_ms=100, data=b"", is_speech=False),
+        AudioChunk(timestamp_ms=300, duration_ms=100, data=b"", is_speech=False),
+    ]:
+        events.extend(session.update(chunk))
+
+    metrics = next(event.metrics for event in events if event.type == "metrics")
+    assert metrics.final_latency_ms == 40
+
+
 def test_streaming_session_decodes_short_utterance_at_endpoint():
     calls = []
 

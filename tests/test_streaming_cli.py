@@ -155,3 +155,23 @@ def test_benchmark_aggregates_metrics_into_markdown_table(monkeypatch, capsys):
     assert "| RTF | 0.2 | 0.3 |" in out
     assert "| first_partial_ms | 200 | 300 |" in out
     assert "| final_ms | 20 | 30 |" in out
+
+
+def test_benchmark_rejects_invalid_audio_before_model_construction(monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("WhisperTranscriber should not be instantiated")
+
+    def bad_validate(path):
+        raise ValueError(f"{path} is not a supported PCM WAV")
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", boom)
+    monkeypatch.setattr(cli, "validate_pcm_wav", bad_validate)
+
+    with pytest.raises(ValueError, match="is not a supported PCM WAV"):
+        cli.main(
+            [
+                "benchmark",
+                "--audio",
+                str(Path("tests/fixtures/audio/a.wav")),
+            ]
+        )

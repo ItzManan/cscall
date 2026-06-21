@@ -73,7 +73,8 @@ class StreamingSession:
                     self._skip_next_decode = False
                     self._audio_since_decode_ms -= self._step_ms
                 else:
-                    events.extend(self._decode(chunk.timestamp_ms))
+                    decoded_events, _decode_ms = self._decode(chunk.timestamp_ms)
+                    events.extend(decoded_events)
                     self._audio_since_decode_ms -= self._step_ms
 
         if any(event.type == "endpoint" for event in endpoint_events):
@@ -92,7 +93,7 @@ class StreamingSession:
         self._final_text = ""
         self._metrics.mark_utterance_start(timestamp_ms)
 
-    def _decode(self, timestamp_ms: int) -> list[StreamingEvent]:
+    def _decode(self, timestamp_ms: int) -> tuple[list[StreamingEvent], int]:
         audio = bytes(self._buffer)
         decode_started_at = self._clock() if self._decode_ms is None else None
         hypothesis = self._transcribe(audio)
@@ -105,7 +106,7 @@ class StreamingSession:
 
         if update.committed:
             self._final_text = _append_text(self._final_text, update.committed)
-            self._metrics.mark_first_partial(timestamp_ms)
+            self._metrics.mark_first_partial(timestamp_ms + decode_ms)
             events.append(
                 StreamingEvent(
                     type="stable",
@@ -115,7 +116,7 @@ class StreamingSession:
             )
 
         if update.unstable:
-            self._metrics.mark_first_partial(timestamp_ms)
+            self._metrics.mark_first_partial(timestamp_ms + decode_ms)
             events.append(
                 StreamingEvent(
                     type="partial",
@@ -127,16 +128,18 @@ class StreamingSession:
         if self._metrics.snapshot().rtf > 1:
             self._skip_next_decode = True
 
-        return events
+        return events, decode_ms
 
     def _finalize(self, timestamp_ms: int) -> list[StreamingEvent]:
         events: list[StreamingEvent] = []
+        final_decode_ms = 0
         if self._buffer and self._audio_since_decode_ms > 0:
-            events.extend(self._decode(timestamp_ms))
+            decoded_events, final_decode_ms = self._decode(timestamp_ms)
+            events.extend(decoded_events)
             self._audio_since_decode_ms = 0
 
         self._metrics.mark_endpoint(timestamp_ms)
-        self._metrics.mark_final(timestamp_ms)
+        self._metrics.mark_final(timestamp_ms + final_decode_ms)
 
         remaining_text = self._agreement.final_flush()
         final_text = _append_text(self._final_text, remaining_text)

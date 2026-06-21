@@ -108,6 +108,10 @@ def _append_silence_chunks(
         )
 
 
+def _validate_audio_inputs(audio_paths: list[str]) -> dict[str, WavInfo]:
+    return {audio_path: validate_pcm_wav(audio_path) for audio_path in audio_paths}
+
+
 def _build_transcribe(args, wav_info: WavInfo, transcriber: WhisperTranscriber | None = None):
     if args.fake_transcript is not None:
 
@@ -148,8 +152,9 @@ def _run_stream_session(
     args: argparse.Namespace,
     audio_path: str,
     transcriber: WhisperTranscriber | None = None,
+    wav_info: WavInfo | None = None,
 ):
-    wav_info = validate_pcm_wav(audio_path)
+    wav_info = wav_info or validate_pcm_wav(audio_path)
     chunks, _ = _iter_wav_chunks(audio_path, args.chunk_ms, args.energy_threshold)
     endpoint_detector = EndpointDetector(EndpointConfig(frame_ms=args.chunk_ms))
     transcribe = _build_transcribe(args, wav_info, transcriber=transcriber)
@@ -206,6 +211,7 @@ def _render_benchmark_table(summary: dict[str, dict[str, int | float | None]]) -
 
 
 def _run_benchmark(args: argparse.Namespace) -> None:
+    wav_infos = _validate_audio_inputs(args.audio)
     transcriber = None
     if args.fake_transcript is None:
         transcriber = WhisperTranscriber(
@@ -214,7 +220,12 @@ def _run_benchmark(args: argparse.Namespace) -> None:
 
     metrics = []
     for audio_path in args.audio:
-        for event in _run_stream_session(args, audio_path, transcriber=transcriber):
+        for event in _run_stream_session(
+            args,
+            audio_path,
+            transcriber=transcriber,
+            wav_info=wav_infos[audio_path],
+        ):
             if event.type == "metrics" and event.metrics is not None:
                 metrics.append(event.metrics)
 
