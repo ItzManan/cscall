@@ -246,10 +246,7 @@ def _transcribe_uploaded_wav(service, audio_bytes: bytes) -> object:
             tmp.write(audio_bytes)
             tmp.flush()
             temp_path = tmp.name
-        try:
-            validate_pcm_wav(temp_path)
-        except ValueError as exc:
-            raise RequestError(_INVALID_WAV_MESSAGE) from exc
+        _validate_complete_pcm_wav(temp_path)
         return service.transcribe_wav(temp_path)
     finally:
         if temp_path is not None:
@@ -257,6 +254,27 @@ def _transcribe_uploaded_wav(service, audio_bytes: bytes) -> object:
                 os.unlink(temp_path)
             except FileNotFoundError:
                 pass
+
+
+def _validate_complete_pcm_wav(path) -> object:
+    path_str = str(path)
+    try:
+        wav_info = validate_pcm_wav(path_str)
+    except ValueError as exc:
+        raise RequestError(_INVALID_WAV_MESSAGE) from exc
+
+    try:
+        with wave.open(path_str, "rb") as wav:
+            frame_size = wav_info.channels * wav_info.sample_width
+            expected_bytes = wav.getnframes() * frame_size
+            payload = wav.readframes(wav.getnframes())
+    except (wave.Error, EOFError) as exc:
+        raise RequestError(_INVALID_WAV_MESSAGE) from exc
+
+    if len(payload) % frame_size != 0 or len(payload) != expected_bytes:
+        raise RequestError(_INVALID_WAV_MESSAGE)
+
+    return wav_info
 
 
 def make_handler(service, html: str | bytes = _PLACEHOLDER_HTML):

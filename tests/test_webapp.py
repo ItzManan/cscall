@@ -826,6 +826,48 @@ def test_transcribe_uploaded_wav_converts_validation_failure_to_request_error(
     assert called and called[0].endswith(".wav")
 
 
+def test_validate_complete_pcm_wav_rejects_truncated_data_payload(tmp_path: Path):
+    audio_path = tmp_path / "sample.wav"
+    _write_pcm_wav(audio_path)
+    truncated_path = tmp_path / "truncated.wav"
+    truncated_path.write_bytes(audio_path.read_bytes()[:-1])
+
+    webapp.validate_pcm_wav(truncated_path)
+
+    with pytest.raises(webapp.RequestError, match="Invalid WAV upload"):
+        webapp._validate_complete_pcm_wav(truncated_path)
+
+
+def test_http_post_transcribe_rejects_truncated_pcm_payload_and_skips_service(tmp_path: Path):
+    audio_path = tmp_path / "sample.wav"
+    _write_pcm_wav(audio_path)
+    truncated_path = tmp_path / "truncated.wav"
+    truncated_path.write_bytes(audio_path.read_bytes()[:-1])
+    body, content_type = _make_multipart_body(
+        [("audio", "sample.wav", truncated_path.read_bytes())]
+    )
+
+    class ExplodingService:
+        def transcribe_wav(self, path):
+            raise AssertionError("service should not be called")
+
+    server = webapp.create_server("127.0.0.1", 0, ExplodingService())
+    with _running_http_server(server):
+        response, payload = _http_request(
+            server,
+            "POST",
+            "/api/transcribe",
+            body=body,
+            headers={
+                "Content-Type": content_type,
+                "Content-Length": str(len(body)),
+            },
+        )
+
+    assert response.status == 400
+    assert _assert_json_response(response, payload) == {"error": "Invalid WAV upload"}
+
+
 @pytest.mark.parametrize(
     ("scenario", "exc_factory"),
     [
