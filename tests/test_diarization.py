@@ -92,6 +92,31 @@ def test_injected_pipeline_bypasses_import_and_token(monkeypatch):
     assert pipeline.calls == [("clip.wav", {"num_speakers": 2})]
 
 
+def test_inference_exception_escapes_unchanged_for_injected_pipeline(monkeypatch):
+    sentinel = RuntimeError("CUDA out of memory")
+
+    def fail_import(*_args, **_kwargs):
+        pytest.fail("pyannote import should not run")
+
+    def fail_getenv(*_args, **_kwargs):
+        pytest.fail("HF_TOKEN lookup should not run")
+
+    class ExplodingPipeline:
+        def __call__(self, audio_path: str, **kwargs):
+            raise sentinel
+
+    monkeypatch.setattr(importlib, "import_module", fail_import)
+    monkeypatch.setattr("cscall.diarization.os.getenv", fail_getenv)
+
+    diarizer = _build_diarizer(pipeline=ExplodingPipeline())
+
+    with pytest.raises(RuntimeError) as excinfo:
+        diarizer.diarize("clip.wav")
+
+    assert excinfo.value is sentinel
+    assert str(excinfo.value) == "CUDA out of memory"
+
+
 def test_regular_annotation_itertracks_is_used_when_exclusive_missing(monkeypatch):
     monkeypatch.setattr(
         importlib,
@@ -130,6 +155,42 @@ def test_tuple_iteration_form_is_supported_and_sorted(monkeypatch):
         [
             (FakeTurnOutput(1.0, 2.0), "SPEAKER_02"),
             (FakeTurnOutput(1.0, 2.0), "SPEAKER_01"),
+        ]
+    )
+    pipeline = FakePipeline(
+        types.SimpleNamespace(
+            exclusive_speaker_diarization=None,
+            speaker_diarization=annotation,
+        )
+    )
+    diarizer = _build_diarizer(pipeline=pipeline)
+
+    turns = diarizer.diarize("clip.wav")
+
+    assert turns == [
+        SpeakerTurn(1.0, 2.0, "SPEAKER_01"),
+        SpeakerTurn(1.0, 2.0, "SPEAKER_02"),
+    ]
+
+
+def test_non_string_speaker_labels_are_coerced_before_sorting(monkeypatch):
+    monkeypatch.setattr(
+        importlib,
+        "import_module",
+        lambda *_args, **_kwargs: pytest.fail("pyannote import should not run"),
+    )
+
+    class Label:
+        def __init__(self, text: str):
+            self.text = text
+
+        def __str__(self) -> str:
+            return self.text
+
+    annotation = FakeTupleAnnotation(
+        [
+            (FakeTurnOutput(1.0, 2.0), Label("SPEAKER_02")),
+            (FakeTurnOutput(1.0, 2.0), Label("SPEAKER_01")),
         ]
     )
     pipeline = FakePipeline(

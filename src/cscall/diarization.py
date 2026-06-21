@@ -16,13 +16,7 @@ class PyannoteDiarizer:
 
     def diarize(self, audio_path: str) -> list[SpeakerTurn]:
         pipeline = self._pipeline if self._pipeline is not None else self._load_pipeline()
-        try:
-            annotation = pipeline(audio_path, num_speakers=2)
-        except Exception as exc:  # pragma: no cover - exercised by tests
-            raise RuntimeError(
-                f"Community-1 diarization failed for {COMMUNITY_MODEL}. "
-                "Accept the model conditions on Hugging Face and try again."
-            ) from exc
+        annotation = pipeline(audio_path, num_speakers=2)
         turns = _annotation_to_turns(annotation)
         turns.sort(key=lambda turn: (turn.start, turn.end, turn.speaker))
         return turns
@@ -44,7 +38,7 @@ class PyannoteDiarizer:
 
         try:
             return module.Pipeline.from_pretrained(COMMUNITY_MODEL, token=token)
-        except Exception as exc:  # pragma: no cover - exercised by tests
+        except Exception as exc:
             raise RuntimeError(
                 f"Community-1 diarization failed for {COMMUNITY_MODEL}. "
                 "Accept the model conditions on Hugging Face and try again."
@@ -59,7 +53,7 @@ def _annotation_to_turns(annotation) -> list[SpeakerTurn]:
     turns: list[SpeakerTurn] = []
     for item in _iter_annotation_items(source):
         turn, speaker = _coerce_turn_item(item)
-        turns.append(SpeakerTurn(turn.start, turn.end, speaker))
+        turns.append(SpeakerTurn(turn.start, turn.end, str(speaker)))
     return turns
 
 
