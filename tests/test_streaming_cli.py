@@ -29,3 +29,28 @@ def test_stream_fake_transcript_runs_without_instantiating_whisper(
     assert "final" in out
     assert "hello world" in out
     assert "Streaming metrics" in out
+
+
+def test_stream_forwards_energy_threshold_to_chunk_reader(monkeypatch, capsys):
+    seen = {}
+
+    def fake_iter_wav_chunks(audio_path, chunk_ms, energy_threshold=200):
+        seen["args"] = (audio_path, chunk_ms, energy_threshold)
+        return [], (8000, 1, 1)
+
+    monkeypatch.setattr(cli, "_iter_wav_chunks", fake_iter_wav_chunks)
+
+    cli.main(
+        [
+            "stream",
+            "--audio",
+            str(Path("tests/fixtures/audio/a.wav")),
+            "--fake-transcript",
+            "hello world",
+            "--energy-threshold",
+            "321",
+        ]
+    )
+
+    capsys.readouterr()
+    assert seen["args"] == ("tests/fixtures/audio/a.wav", 500, 321)

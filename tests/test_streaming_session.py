@@ -82,6 +82,33 @@ def test_streaming_session_decodes_only_on_step_boundaries():
     assert len(calls) == 2
 
 
+def test_streaming_session_preserves_decode_cadence_remainder():
+    calls = []
+
+    def transcribe(audio: bytes) -> str:
+        calls.append(audio)
+        return "hello"
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=100,
+        agreement=2,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=1000)
+        ),
+    )
+
+    session.update(
+        AudioChunk(timestamp_ms=250, duration_ms=250, data=b"abc", is_speech=True)
+    )
+    assert len(calls) == 1
+
+    session.update(AudioChunk(timestamp_ms=300, duration_ms=50, data=b"d", is_speech=True))
+
+    assert len(calls) == 2
+    assert calls == [b"abc", b"abcd"]
+
+
 def test_streaming_session_resets_after_endpoint_and_handles_second_utterance():
     hypotheses = iter(["alpha", "beta"])
 

@@ -69,7 +69,7 @@ class StreamingSession:
 
             if self._audio_since_decode_ms >= self._step_ms:
                 events.extend(self._decode(chunk.timestamp_ms))
-                self._audio_since_decode_ms = 0
+                self._audio_since_decode_ms -= self._step_ms
 
         if any(event.type == "endpoint" for event in endpoint_events):
             events.extend(self._finalize(chunk.timestamp_ms))

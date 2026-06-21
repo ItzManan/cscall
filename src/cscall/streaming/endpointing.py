@@ -55,4 +55,3 @@ class EndpointDetector:
         self._speech_ms = 0
         self._silence_ms = 0
         self._active = False
-

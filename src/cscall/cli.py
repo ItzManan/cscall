@@ -9,6 +9,7 @@ from cscall.asr_baseline import WhisperTranscriber
 from cscall.compare import compare_models, render_comparison_markdown
 from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
+from cscall.streaming.audio import is_speech_pcm
 from cscall.streaming.endpointing import EndpointConfig, EndpointDetector
 from cscall.streaming.session import AudioChunk, StreamingSession
 
@@ -21,11 +22,12 @@ def _add_stream_parser(subparsers: argparse._SubParsersAction) -> None:
     stream.add_argument("--agreement", type=int, default=2)
     stream.add_argument("--compute-type", dest="compute_type", default="int8")
     stream.add_argument("--device", default="cpu")
+    stream.add_argument("--energy-threshold", dest="energy_threshold", type=int, default=200)
     stream.add_argument("--fake-transcript", dest="fake_transcript", default=None)
 
 
 def _iter_wav_chunks(
-    audio_path: str, chunk_ms: int
+    audio_path: str, chunk_ms: int, energy_threshold: int = 200
 ) -> tuple[list[AudioChunk], tuple[int, int, int]]:
     chunks: list[AudioChunk] = []
     with wave.open(audio_path, "rb") as wav:
@@ -48,7 +50,7 @@ def _iter_wav_chunks(
                     timestamp_ms=timestamp_ms,
                     duration_ms=duration_ms,
                     data=data,
-                    is_speech=any(byte != 0 for byte in data),
+                    is_speech=is_speech_pcm(data, sampwidth, energy_threshold),
                 )
             )
 
@@ -111,7 +113,9 @@ def _print_stream_events(events) -> None:
 
 
 def _run_stream(args: argparse.Namespace) -> None:
-    chunks, (sample_rate, channels, sampwidth) = _iter_wav_chunks(args.audio, args.chunk_ms)
+    chunks, (sample_rate, channels, sampwidth) = _iter_wav_chunks(
+        args.audio, args.chunk_ms, args.energy_threshold
+    )
     endpoint_detector = EndpointDetector(EndpointConfig(frame_ms=args.chunk_ms))
 
     if args.fake_transcript is not None:

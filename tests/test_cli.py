@@ -67,6 +67,7 @@ def test_stream_subcommand_parses_with_defaults():
     assert args.agreement == 2
     assert args.compute_type == "int8"
     assert args.device == "cpu"
+    assert args.energy_threshold == 200
     assert args.fake_transcript is None
 
 
@@ -98,4 +99,21 @@ def test_stream_subcommand_parses_custom_options():
     assert args.agreement == 3
     assert args.compute_type == "float16"
     assert args.device == "cuda"
+    assert args.energy_threshold == 200
     assert args.fake_transcript == "hello"
+
+
+def test_stream_subcommand_parses_custom_energy_threshold():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "stream",
+            "--audio",
+            "tests/fixtures/audio/a.wav",
+            "--energy-threshold",
+            "37",
+        ]
+    )
+
+    assert args.command == "stream"
+    assert args.energy_threshold == 37
