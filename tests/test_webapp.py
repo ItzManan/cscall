@@ -548,7 +548,7 @@ def test_http_health_and_routes_return_json_html_and_404():
     with _running_http_server(server):
         response, payload = _http_request(server, "GET", "/health")
         assert response.status == 200
-        assert _assert_json_response(response, payload) == {"ok": True}
+        assert _assert_json_response(response, payload) == {"status": "ok"}
 
         response, payload = _http_request(server, "GET", "/")
         assert response.status == 200
@@ -675,6 +675,76 @@ def test_http_post_transcribe_maps_model_runtime_error_to_503_without_leaking_de
     assert "agreement" not in payload.decode().lower()
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "HF_TOKEN is missing",
+        "pyannote.audio is required for diarization",
+        "Please accept the model conditions",
+    ],
+)
+def test_http_post_transcribe_maps_known_model_setup_errors_to_503(
+    tmp_path: Path, message: str
+):
+    audio_path = tmp_path / "sample.wav"
+    _write_pcm_wav(audio_path)
+    audio_bytes = audio_path.read_bytes()
+    body, content_type = _make_multipart_body([("audio", "sample.wav", audio_bytes)])
+
+    class ModelService:
+        def transcribe_wav(self, path):
+            raise RuntimeError(message)
+
+    service = ModelService()
+    server = webapp.create_server("127.0.0.1", 0, service)
+    with _running_http_server(server):
+        response, payload = _http_request(
+            server,
+            "POST",
+            "/api/transcribe",
+            body=body,
+            headers={
+                "Content-Type": content_type,
+                "Content-Length": str(len(body)),
+            },
+        )
+
+    assert response.status == 503
+    assert _assert_json_response(response, payload) == {
+        "error": "The transcription service is temporarily unavailable."
+    }
+
+
+def test_http_post_transcribe_keeps_generic_pyannote_runtime_errors_as_500(
+    tmp_path: Path,
+):
+    audio_path = tmp_path / "sample.wav"
+    _write_pcm_wav(audio_path)
+    audio_bytes = audio_path.read_bytes()
+    body, content_type = _make_multipart_body([("audio", "sample.wav", audio_bytes)])
+
+    class ModelService:
+        def transcribe_wav(self, path):
+            raise RuntimeError("pyannote runtime bug")
+
+    service = ModelService()
+    server = webapp.create_server("127.0.0.1", 0, service)
+    with _running_http_server(server):
+        response, payload = _http_request(
+            server,
+            "POST",
+            "/api/transcribe",
+            body=body,
+            headers={
+                "Content-Type": content_type,
+                "Content-Length": str(len(body)),
+            },
+        )
+
+    assert response.status == 500
+    assert _assert_json_response(response, payload) == {"error": "Internal server error"}
+
+
 def test_http_post_transcribe_rejects_invalid_content_type_before_service():
     class ExplodingService:
         def transcribe_wav(self, path):
@@ -701,7 +771,7 @@ def test_http_post_transcribe_rejects_invalid_content_type_before_service():
     }
 
 
-def test_http_post_transcribe_sanitizes_pcm_value_error_response(tmp_path: Path):
+def test_http_post_transcribe_returns_500_for_service_value_error(tmp_path: Path):
     audio_path = tmp_path / "sample.wav"
     _write_pcm_wav(audio_path)
     audio_bytes = audio_path.read_bytes()
@@ -726,6 +796,98 @@ def test_http_post_transcribe_sanitizes_pcm_value_error_response(tmp_path: Path)
         )
 
     decoded = _assert_json_response(response, payload)
-    assert response.status == 400
-    assert decoded == {"error": "Invalid WAV upload"}
+    assert response.status == 500
+    assert decoded == {"error": "Internal server error"}
     assert str(tmp_path) not in payload.decode()
+
+
+def test_transcribe_uploaded_wav_converts_validation_failure_to_request_error(
+    monkeypatch, tmp_path: Path
+):
+    audio_path = tmp_path / "sample.wav"
+    _write_pcm_wav(audio_path)
+    audio_bytes = audio_path.read_bytes()
+
+    called = []
+
+    def fake_validate_pcm_wav(path):
+        called.append(path)
+        raise ValueError("bad wav")
+
+    class FakeService:
+        def transcribe_wav(self, path):
+            raise AssertionError("service should not be called")
+
+    monkeypatch.setattr(webapp, "validate_pcm_wav", fake_validate_pcm_wav)
+
+    with pytest.raises(webapp.RequestError, match="Invalid WAV upload"):
+        webapp._transcribe_uploaded_wav(FakeService(), audio_bytes)
+
+    assert called and called[0].endswith(".wav")
+
+
+@pytest.mark.parametrize(
+    ("scenario", "exc_factory"),
+    [
+        ("send_response", lambda h: BrokenPipeError("broken")),
+        ("send_header", lambda h: BrokenPipeError("broken")),
+        ("end_headers", lambda h: ConnectionResetError("reset")),
+        ("write", lambda h: BrokenPipeError("broken")),
+    ],
+)
+def test_response_bytes_swallow_disconnects_during_error_responses(scenario, exc_factory):
+    events = []
+
+    class FakeWriter:
+        def write(self, data):
+            events.append(("write", data))
+            if scenario == "write":
+                raise exc_factory(None)
+
+    class FakeHandler:
+        def __init__(self):
+            self.wfile = FakeWriter()
+
+        def send_response(self, status):
+            events.append(("send_response", status))
+            if scenario == "send_response":
+                raise exc_factory(None)
+
+        def send_header(self, name, value):
+            events.append(("send_header", name, value))
+            if scenario == "send_header":
+                raise exc_factory(None)
+
+        def end_headers(self):
+            events.append(("end_headers",))
+            if scenario == "end_headers":
+                raise exc_factory(None)
+
+    webapp._response_bytes(FakeHandler(), 500, "application/json; charset=utf-8", b"{}")
+    assert events
+
+
+def test_parse_multipart_audio_upload_rejects_unclosed_final_boundary_and_ignores_embedded_boundary_bytes():
+    body, content_type = _make_multipart_body(
+        [("audio", "clip.wav", b"noise--boundary123--noise")],
+        closing=False,
+    )
+
+    with pytest.raises(webapp.RequestError, match="boundary|defect|malformed"):
+        webapp._parse_multipart_audio_upload(body, content_type)
+
+
+def test_parse_multipart_audio_upload_rejects_part_defects_even_with_valid_headers():
+    boundary = "boundary123"
+    body = (
+        f"--{boundary}\r\n"
+        f"Content-Disposition: form-data; name=\"audio\"; filename=\"clip.wav\"\r\n"
+        f"Content-Type: audio/wav\r\n"
+        f"BadHeader\r\n"
+        f"\r\n"
+        f"abc\r\n"
+        f"--{boundary}--\r\n"
+    ).encode()
+
+    with pytest.raises(webapp.RequestError, match="defect|malformed"):
+        webapp._parse_multipart_audio_upload(body, f"multipart/form-data; boundary={boundary}")

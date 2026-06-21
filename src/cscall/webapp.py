@@ -125,12 +125,15 @@ def _json_bytes(payload: object) -> bytes:
 def _response_bytes(
     handler: BaseHTTPRequestHandler, status: HTTPStatus, content_type: str, body: bytes
 ) -> None:
-    handler.send_response(status)
-    handler.send_header("Content-Type", content_type)
-    handler.send_header("Content-Length", str(len(body)))
-    handler.end_headers()
-    if body:
-        handler.wfile.write(body)
+    try:
+        handler.send_response(status)
+        handler.send_header("Content-Type", content_type)
+        handler.send_header("Content-Length", str(len(body)))
+        handler.end_headers()
+        if body:
+            handler.wfile.write(body)
+    except (BrokenPipeError, ConnectionResetError):
+        return
 
 
 def _send_json(
@@ -188,10 +191,20 @@ def _parse_multipart_audio_upload(body: bytes, content_type: str) -> bytes:
     if not message.get_boundary():
         raise RequestError("missing multipart boundary")
 
+    boundary = message.get_boundary().encode("utf-8")
+    closing_boundary = b"--" + boundary + b"--"
+    if not body.endswith(closing_boundary + b"\r\n") and not body.endswith(closing_boundary):
+        raise RequestError("malformed multipart/form-data upload")
+
+    if message.defects:
+        raise RequestError("malformed multipart/form-data upload")
+
     if not message.is_multipart():
         raise RequestError("malformed multipart/form-data upload")
 
     parts = list(message.iter_parts())
+    if any(part.defects for part in parts):
+        raise RequestError("malformed multipart/form-data upload")
     if len(parts) != 1:
         raise RequestError("multipart upload must contain exactly one part")
 
@@ -216,7 +229,14 @@ def _parse_multipart_audio_upload(body: bytes, content_type: str) -> bytes:
 
 def _is_model_setup_runtime_error(exc: RuntimeError) -> bool:
     message = str(exc).lower()
-    return any(token in message for token in ("hf_token", "pyannote", "agreement"))
+    return any(
+        token in message
+        for token in (
+            "hf_token",
+            "pyannote.audio is required",
+            "accept the model conditions",
+        )
+    )
 
 
 def _transcribe_uploaded_wav(service, audio_bytes: bytes) -> object:
@@ -226,6 +246,10 @@ def _transcribe_uploaded_wav(service, audio_bytes: bytes) -> object:
             tmp.write(audio_bytes)
             tmp.flush()
             temp_path = tmp.name
+        try:
+            validate_pcm_wav(temp_path)
+        except ValueError as exc:
+            raise RequestError(_INVALID_WAV_MESSAGE) from exc
         return service.transcribe_wav(temp_path)
     finally:
         if temp_path is not None:
@@ -250,7 +274,7 @@ def make_handler(service, html: str | bytes = _PLACEHOLDER_HTML):
             try:
                 path = _request_path(self)
                 if path == "/health":
-                    _send_json(self, HTTPStatus.OK, {"ok": True})
+                    _send_json(self, HTTPStatus.OK, {"status": "ok"})
                     return
                 if path == "/":
                     _send_html(self, HTTPStatus.OK, self.html_bytes)
@@ -275,8 +299,6 @@ def make_handler(service, html: str | bytes = _PLACEHOLDER_HTML):
                 _send_json(self, HTTPStatus.OK, result)
             except RequestError as exc:
                 _send_json(self, HTTPStatus(exc.status_code), {"error": str(exc)})
-            except ValueError:
-                _send_json(self, HTTPStatus.BAD_REQUEST, {"error": _INVALID_WAV_MESSAGE})
             except RuntimeError as exc:
                 if _is_model_setup_runtime_error(exc):
                     _send_json(
