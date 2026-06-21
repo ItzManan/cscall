@@ -99,6 +99,50 @@ def test_diarize_prints_exact_turns_and_der_when_reference_rttm_is_supplied(
     )]
 
 
+def test_diarize_keeps_stdout_empty_when_der_fails(
+    monkeypatch, capsys, tmp_path
+):
+    def fake_validate_pcm_wav(path):
+        return cli.WavInfo(sample_rate=16000, channels=1, sample_width=2)
+
+    def fake_load_rttm(path):
+        return [SpeakerTurn(0.0, 1.0, "SPEAKER_00")]
+
+    class FakeDiarizer:
+        def __init__(self, **kwargs):
+            self.calls: list[str] = []
+
+        def diarize(self, audio_path: str):
+            self.calls.append(audio_path)
+            return [SpeakerTurn(0.0, 1.0, "SPEAKER_00")]
+
+    def fake_diarization_error_rate(reference, hypothesis):
+        raise RuntimeError("der failed")
+
+    monkeypatch.setattr(cli, "validate_pcm_wav", fake_validate_pcm_wav)
+    monkeypatch.setattr(cli, "load_rttm", fake_load_rttm)
+    monkeypatch.setattr(cli, "PyannoteDiarizer", FakeDiarizer)
+    monkeypatch.setattr(cli, "diarization_error_rate", fake_diarization_error_rate)
+
+    audio_path = tmp_path / "call.wav"
+    audio_path.write_bytes(b"wav")
+    rttm_path = tmp_path / "ref.rttm"
+    rttm_path.write_text("rttm", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="der failed"):
+        cli.main(
+            [
+                "diarize",
+                "--audio",
+                str(audio_path),
+                "--reference-rttm",
+                str(rttm_path),
+            ]
+        )
+
+    assert capsys.readouterr().out == ""
+
+
 def test_diarize_loads_reference_rttm_before_constructing_diarizer(
     monkeypatch, tmp_path
 ):
@@ -276,6 +320,12 @@ def test_transcribe_speakers_forwards_language_and_renders_transcript(
             ],
             [SpeakerTurn(0.0, 1.0, "SPEAKER_00")],
         )
+    ]
+    assert render_calls == [
+        [
+            SpeakerWord(0.0, 0.5, "hello", "SPEAKER_00"),
+            SpeakerWord(0.5, 1.0, "world", "SPEAKER_00"),
+        ]
     ]
 
 

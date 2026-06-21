@@ -166,9 +166,10 @@ def _run_diarize(args: argparse.Namespace) -> None:
         reference = None
     diarizer = PyannoteDiarizer()
     turns = diarizer.diarize(args.audio)
-    _print_diarization(turns)
     if reference is not None:
         score = diarization_error_rate(reference, turns)
+    _print_diarization(turns)
+    if reference is not None:
         print(f"DER: {score * 100:.2f}%")
 
 
