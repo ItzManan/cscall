@@ -540,6 +540,50 @@ def test_create_server_returns_threading_http_server():
         server.server_close()
 
 
+def test_full_upload_ui_html_includes_accessible_controls_and_safe_client_logic():
+    html = webapp.FULL_UPLOAD_UI_HTML
+    lower = html.lower()
+
+    assert "<title>upload transcript" in lower
+    assert "<main" in lower
+    assert "<form" in lower
+    assert 'id="audio"' in lower
+    assert 'name="audio"' in lower
+    assert 'type="file"' in lower
+    assert 'accept=".wav,audio/wav"' in lower
+    assert 'aria-live="polite"' in lower
+    assert 'role="status"' in lower
+    assert 'id="processing-ms"' in lower
+    assert 'id="audio-seconds"' in lower
+    assert 'id="rtf"' in lower
+    assert 'id="transcript-list"' in lower
+    assert "speaker-a" in lower
+    assert "speaker-b" in lower
+    assert "speaker-other" in lower
+    assert "hf_token" in lower
+    assert "prefers-reduced-motion" in lower
+    assert "fetch(\"/api/transcribe\"" in html or "fetch('/api/transcribe'" in html
+    assert "new FormData()" in html
+    assert "createElement" in html
+    assert "textContent" in html
+    assert "innerHTML" not in html
+    assert "<script src=" not in lower
+    assert "<link rel=" not in lower
+    assert "http://" not in lower
+    assert "https://" not in lower
+
+
+def test_http_get_root_returns_full_upload_ui_html_by_default():
+    service = object()
+    server = webapp.create_server("127.0.0.1", 0, service)
+    with _running_http_server(server):
+        response, payload = _http_request(server, "GET", "/")
+
+    assert response.status == 200
+    assert response.getheader("Content-Type") == "text/html; charset=utf-8"
+    assert payload.decode() == webapp.FULL_UPLOAD_UI_HTML
+
+
 def test_http_health_and_routes_return_json_html_and_404():
     service = object()
     handler_cls = webapp.make_handler(service, html="<html><body>hello</body></html>")

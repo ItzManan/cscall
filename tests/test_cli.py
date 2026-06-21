@@ -1,5 +1,6 @@
 import pytest
 
+import cscall.cli as cli
 from cscall.cli import build_parser
 
 
@@ -188,6 +189,164 @@ def test_benchmark_subcommand_parses_manifest_path():
     assert args.manifest == "tests/fixtures/mini_manifest.jsonl"
     assert args.audio is None
     assert args.language is None
+
+
+def test_ui_subcommand_parses_defaults():
+    parser = build_parser()
+    args = parser.parse_args(["ui"])
+
+    assert args.command == "ui"
+    assert args.host == "127.0.0.1"
+    assert args.port == 8000
+    assert args.model == "small"
+    assert args.device == "cpu"
+    assert args.compute_type == "int8"
+    assert args.language is None
+
+
+def test_ui_subcommand_parses_custom_model_and_runtime_options():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "ui",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8123",
+            "--model",
+            "medium",
+            "--device",
+            "cuda",
+            "--compute-type",
+            "float16",
+            "--language",
+            "hi",
+        ]
+    )
+
+    assert args.command == "ui"
+    assert args.host == "0.0.0.0"
+    assert args.port == 8123
+    assert args.model == "medium"
+    assert args.device == "cuda"
+    assert args.compute_type == "float16"
+    assert args.language == "hi"
+
+
+@pytest.mark.parametrize("port", ["0", "65536"])
+def test_ui_subcommand_rejects_invalid_port(port: str):
+    parser = build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(["ui", "--port", port])
+
+
+def test_main_ui_forwards_run_server_arguments(monkeypatch):
+    captured = {}
+
+    def fake_run_server(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "run_server", fake_run_server)
+
+    cli.main(
+        [
+            "ui",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "8123",
+            "--model",
+            "medium",
+            "--device",
+            "cuda",
+            "--compute-type",
+            "float16",
+            "--language",
+            "hi",
+        ]
+    )
+
+    assert captured == {
+        "host": "0.0.0.0",
+        "port": 8123,
+        "model": "medium",
+        "device": "cuda",
+        "compute_type": "float16",
+        "language": "hi",
+    }
+
+
+def test_run_server_uses_lazy_model_factories_and_closes_on_keyboard_interrupt(
+    monkeypatch, capsys
+):
+    init_log: list[tuple[str, ...]] = []
+
+    class FakeWhisperTranscriber:
+        def __init__(
+            self,
+            model_size: str = "small",
+            device: str = "cpu",
+            compute_type: str = "int8",
+            language: str | None = None,
+        ):
+            init_log.append(("whisper", model_size, device, compute_type, language or ""))
+
+    class FakePyannoteDiarizer:
+        def __init__(self):
+            init_log.append(("diarizer",))
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", FakeWhisperTranscriber)
+    monkeypatch.setattr(cli, "PyannoteDiarizer", FakePyannoteDiarizer)
+
+    server_state = {}
+
+    class FakeServer:
+        def __init__(self, service):
+            self.service = service
+            self.server_address = ("127.0.0.1", 8123)
+            self.closed = False
+
+        def serve_forever(self):
+            server_state["started"] = True
+            assert init_log == []
+            assert self.service._transcriber is None
+            assert self.service._diarizer is None
+            self.service._get_transcriber()
+            self.service._get_diarizer()
+            assert init_log == [
+                ("whisper", "large", "cuda", "float16", "hi"),
+                ("diarizer",),
+            ]
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            self.closed = True
+            server_state["closed"] = True
+
+    def fake_server_factory(host, port, service):
+        server_state["host"] = host
+        server_state["port"] = port
+        server_state["service"] = service
+        server_state["server"] = FakeServer(service)
+        return server_state["server"]
+
+    cli.run_server(
+        "127.0.0.1",
+        8123,
+        "large",
+        "cuda",
+        "float16",
+        "hi",
+        server_factory=fake_server_factory,
+    )
+
+    output = capsys.readouterr().out.strip().splitlines()
+    assert output == ["http://127.0.0.1:8123"]
+    assert server_state["host"] == "127.0.0.1"
+    assert server_state["port"] == 8123
+    assert server_state["closed"] is True
+    assert isinstance(server_state["service"], cli.SpeakerTranscriptionService)
 
 
 @pytest.mark.parametrize(

@@ -11,6 +11,7 @@ from cscall.diarization import PyannoteDiarizer, diarization_error_rate, load_rt
 from cscall.fusion import fuse_words, render_speaker_transcript
 from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
+from cscall.webapp import SpeakerTranscriptionService, create_server
 from cscall.streaming.audio import WavInfo, is_speech_pcm, validate_pcm_wav
 from cscall.streaming.endpointing import EndpointConfig, EndpointDetector
 from cscall.streaming.metrics import StreamingMetrics, summarize_metrics
@@ -28,6 +29,13 @@ def _non_negative_int(value: str) -> int:
     parsed = int(value)
     if parsed < 0:
         raise argparse.ArgumentTypeError("must be >= 0")
+    return parsed
+
+
+def _port_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1 or parsed > 65535:
+        raise argparse.ArgumentTypeError("must be between 1 and 65535")
     return parsed
 
 
@@ -62,6 +70,36 @@ def _add_speaker_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--language", default=None)
 
 
+def run_server(
+    host: str,
+    port: int,
+    model: str,
+    device: str,
+    compute_type: str,
+    language: str | None,
+    server_factory=create_server,
+) -> None:
+    service = SpeakerTranscriptionService(
+        transcriber_factory=lambda: WhisperTranscriber(
+            model_size=model,
+            device=device,
+            compute_type=compute_type,
+            language=language,
+        ),
+        diarizer_factory=lambda: PyannoteDiarizer(),
+    )
+    server = server_factory(host, port, service)
+    actual_host, actual_port = server.server_address[:2]
+    print(f"http://{actual_host}:{actual_port}")
+    try:
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+    finally:
+        server.server_close()
+
+
 def _add_diarize_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("diarize", help="run two-speaker diarization on a WAV")
     parser.add_argument("--audio", required=True)
@@ -81,6 +119,13 @@ def _add_stream_parser(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("stream", help="run the phase 2 streaming demo")
     parser.add_argument("--audio", required=True)
     _add_stream_args(parser)
+
+
+def _add_ui_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("ui", help="run the local upload transcript web UI")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=_port_int, default=8000)
+    _add_speaker_model_args(parser)
 
 
 def _iter_wav_chunks(
@@ -350,6 +395,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_transcribe_speakers_parser(sub)
     _add_stream_parser(sub)
     _add_benchmark_parser(sub)
+    _add_ui_parser(sub)
     return parser
 
 
@@ -392,6 +438,15 @@ def main(argv: list[str] | None = None) -> None:
         _run_diarize(args)
     elif args.command == "transcribe-speakers":
         _run_transcribe_speakers(args)
+    elif args.command == "ui":
+        run_server(
+            host=args.host,
+            port=args.port,
+            model=args.model,
+            device=args.device,
+            compute_type=args.compute_type,
+            language=args.language,
+        )
 
 
 if __name__ == "__main__":

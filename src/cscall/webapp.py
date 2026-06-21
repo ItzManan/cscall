@@ -26,7 +26,524 @@ _SERVICE_UNAVAILABLE_MESSAGE = (
 )
 _INTERNAL_SERVER_ERROR_MESSAGE = "Internal server error"
 _INVALID_WAV_MESSAGE = "Invalid WAV upload"
-_PLACEHOLDER_HTML = "<!doctype html><html><body><h1>Upload transcription API</h1></body></html>"
+FULL_UPLOAD_UI_HTML = r"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upload transcript</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-alt: #f1f5f9;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #cbd5e1;
+      --accent: #1d4ed8;
+      --accent-strong: #1e3a8a;
+      --success: #166534;
+      --speaker-a: #dbeafe;
+      --speaker-b: #ffedd5;
+      --speaker-other: #e2e8f0;
+      --shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font: 16px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(29, 78, 216, 0.1), transparent 48%),
+        var(--bg);
+    }
+
+    main {
+      width: min(100%, 64rem);
+      margin: 0 auto;
+      padding: clamp(1rem, 3vw, 2rem);
+    }
+
+    header,
+    form,
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      box-shadow: var(--shadow);
+    }
+
+    header {
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    h1 {
+      font-size: clamp(1.75rem, 3vw, 2.5rem);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+    }
+
+    .lede,
+    .setup-note,
+    .status {
+      color: var(--muted);
+    }
+
+    .lede {
+      margin-top: 0.5rem;
+      max-width: 58ch;
+    }
+
+    form {
+      display: grid;
+      gap: 1rem;
+      padding: 1.25rem 1.5rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .field {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    label {
+      font-weight: 650;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      background: var(--surface-alt);
+      color: var(--text);
+    }
+
+    button {
+      justify-self: start;
+      border: 0;
+      border-radius: 999px;
+      padding: 0.8rem 1.25rem;
+      background: var(--accent);
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition:
+        transform 120ms ease,
+        background-color 120ms ease,
+        opacity 120ms ease;
+    }
+
+    button:hover,
+    button:focus-visible {
+      background: var(--accent-strong);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button:disabled,
+    input[type="file"]:disabled {
+      opacity: 0.65;
+      cursor: progress;
+    }
+
+    :focus-visible {
+      outline: 3px solid #0f766e;
+      outline-offset: 3px;
+    }
+
+    .status {
+      min-height: 1.5rem;
+      font-weight: 600;
+    }
+
+    .setup-note {
+      font-size: 0.95rem;
+    }
+
+    section {
+      padding: 1.25rem 1.5rem 1.5rem;
+    }
+
+    .results-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+      gap: 0.75rem;
+      margin: 0 0 1rem;
+    }
+
+    .metric {
+      margin: 0;
+      padding: 0.85rem 1rem;
+      border-radius: 0.85rem;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+    }
+
+    .metric dt {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .metric dd {
+      margin: 0.35rem 0 0;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text);
+      word-break: break-word;
+    }
+
+    .transcript-list {
+      list-style: none;
+      display: grid;
+      gap: 0.75rem;
+      padding: 0;
+      margin: 0;
+    }
+
+    .transcript-item {
+      display: grid;
+      gap: 0.25rem;
+      padding: 1rem 1rem 1rem 1.15rem;
+      border-radius: 0.95rem;
+      border: 1px solid var(--border);
+      border-left-width: 0.45rem;
+      background: var(--surface-alt);
+    }
+
+    .speaker-a {
+      border-left-color: #2563eb;
+      background: var(--speaker-a);
+    }
+
+    .speaker-b {
+      border-left-color: #d97706;
+      background: var(--speaker-b);
+    }
+
+    .speaker-other {
+      border-left-color: #64748b;
+      background: var(--speaker-other);
+    }
+
+    .speaker-label {
+      font-size: 0.85rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .timestamp {
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+
+    .transcript-text {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    .empty-state {
+      padding: 1rem;
+      border-radius: 0.95rem;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      background: var(--surface-alt);
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 40rem) {
+      main {
+        padding: 0.75rem;
+      }
+
+      header,
+      form,
+      section {
+        border-radius: 0.9rem;
+      }
+
+      header,
+      form,
+      section {
+        padding-inline: 1rem;
+      }
+
+      button {
+        width: 100%;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Upload transcript</h1>
+      <p class="lede">Upload a WAV file to transcribe locally and view speaker-attributed results in the browser.</p>
+    </header>
+
+    <form id="upload-form" enctype="multipart/form-data" novalidate>
+      <div class="field">
+        <label for="audio">WAV file</label>
+        <input id="audio" name="audio" type="file" accept=".wav,audio/wav">
+      </div>
+      <button id="submit-button" type="submit">Transcribe</button>
+      <p class="setup-note">Set <code>HF_TOKEN</code> in the environment before starting the server so diarization can load.</p>
+      <p id="status" class="status" aria-live="polite" role="status"></p>
+    </form>
+
+    <section aria-labelledby="results-heading">
+      <div class="results-header">
+        <h2 id="results-heading">Results</h2>
+      </div>
+      <dl id="metrics" class="metrics" hidden>
+        <div class="metric">
+          <dt>Processing</dt>
+          <dd id="processing-ms"></dd>
+        </div>
+        <div class="metric">
+          <dt>Audio</dt>
+          <dd id="audio-seconds"></dd>
+        </div>
+        <div class="metric">
+          <dt>RTF</dt>
+          <dd id="rtf"></dd>
+        </div>
+      </dl>
+      <ol id="transcript-list" class="transcript-list" hidden></ol>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const form = document.getElementById("upload-form");
+      const fileInput = document.getElementById("audio");
+      const submitButton = document.getElementById("submit-button");
+      const status = document.getElementById("status");
+      const metrics = document.getElementById("metrics");
+      const transcriptList = document.getElementById("transcript-list");
+
+      function setStatus(message) {
+        status.textContent = message;
+      }
+
+      function formatTimestamp(seconds) {
+        const numeric = Number(seconds);
+        const safeSeconds = Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+        const minutes = Math.floor(safeSeconds / 60);
+        const remainder = safeSeconds - (minutes * 60);
+        return String(minutes).padStart(2, "0") + ":" + remainder.toFixed(2).padStart(5, "0");
+      }
+
+      function formatProcessingMs(value) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? `${Math.max(0, Math.round(numeric))} ms` : "n/a";
+      }
+
+      function formatRtf(value) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric.toFixed(3) : "n/a";
+      }
+
+      function speakerClassFactory() {
+        const labels = new Map();
+        return (speaker) => {
+          const label = String(speaker || "").trim();
+          if (!label) {
+            return "speaker-other";
+          }
+          if (labels.has(label)) {
+            return labels.get(label);
+          }
+          const assigned =
+            labels.size === 0 ? "speaker-a" : labels.size === 1 ? "speaker-b" : "speaker-other";
+          labels.set(label, assigned);
+          return assigned;
+        };
+      }
+
+      function renderMetrics(data) {
+        const fragment = document.createDocumentFragment();
+        const items = [
+          ["Processing", formatProcessingMs(data.processing_ms)],
+          ["Audio", formatTimestamp(data.audio_seconds)],
+          ["RTF", formatRtf(data.rtf)],
+        ];
+
+        for (const [label, value] of items) {
+          const wrap = document.createElement("div");
+          wrap.className = "metric";
+          const dt = document.createElement("dt");
+          dt.textContent = label;
+          const dd = document.createElement("dd");
+          dd.textContent = value;
+          wrap.append(dt, dd);
+          fragment.append(wrap);
+        }
+
+        metrics.replaceChildren(fragment);
+        metrics.hidden = false;
+      }
+
+      function renderTranscript(segments) {
+        const speakerClass = speakerClassFactory();
+        const fragment = document.createDocumentFragment();
+
+        if (!Array.isArray(segments) || segments.length === 0) {
+          const empty = document.createElement("li");
+          empty.className = "empty-state";
+          empty.textContent = "No transcript segments were returned.";
+          fragment.append(empty);
+          transcriptList.replaceChildren(fragment);
+          transcriptList.hidden = false;
+          return;
+        }
+
+        for (const segment of segments) {
+          const item = document.createElement("li");
+          item.className = `transcript-item ${speakerClass(segment && segment.speaker)}`;
+
+          const speaker = document.createElement("div");
+          speaker.className = "speaker-label";
+          speaker.textContent = segment && segment.speaker ? String(segment.speaker) : "Unknown speaker";
+
+          const timestamp = document.createElement("div");
+          timestamp.className = "timestamp";
+          timestamp.textContent = `${formatTimestamp(segment && segment.start)} — ${formatTimestamp(segment && segment.end)}`;
+
+          const text = document.createElement("p");
+          text.className = "transcript-text";
+          text.textContent = segment && segment.text ? String(segment.text) : "";
+
+          item.append(speaker, timestamp, text);
+          fragment.append(item);
+        }
+
+        transcriptList.replaceChildren(fragment);
+        transcriptList.hidden = false;
+      }
+
+      async function handleSubmit(event) {
+        event.preventDefault();
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          setStatus("Choose a WAV file before transcribing.");
+          fileInput.focus();
+          return;
+        }
+
+        const isWav = file.type === "audio/wav" || /\.wav$/i.test(file.name || "");
+        if (!isWav) {
+          setStatus("Please choose a WAV file.");
+          fileInput.focus();
+          return;
+        }
+
+        const originalButtonText = submitButton.textContent;
+        submitButton.disabled = true;
+        fileInput.disabled = true;
+        setStatus("Transcribing…");
+
+        try {
+          const formData = new FormData();
+          formData.append("audio", file, file.name || "upload.wav");
+
+          const response = await fetch("/api/transcribe", {
+            method: "POST",
+            body: formData,
+          });
+
+          const rawText = await response.text();
+          let payload = null;
+          if (rawText) {
+            try {
+              payload = JSON.parse(rawText);
+            } catch {
+              payload = null;
+            }
+          }
+
+          if (!response.ok) {
+            const message =
+              payload && typeof payload.error === "string"
+                ? payload.error
+                : rawText.trim() || `Request failed with ${response.status}`;
+            setStatus(message);
+            return;
+          }
+
+          if (!payload || typeof payload !== "object") {
+            setStatus("Unexpected response from server.");
+            return;
+          }
+
+          renderMetrics(payload);
+          renderTranscript(payload.segments);
+          setStatus("Transcription complete.");
+        } catch (error) {
+          setStatus("Upload failed. Check the server and try again.");
+        } finally {
+          submitButton.disabled = false;
+          fileInput.disabled = false;
+          submitButton.textContent = originalButtonText;
+        }
+      }
+
+      form.addEventListener("submit", handleSubmit);
+    })();
+  </script>
+</body>
+</html>
+"""
+
+_PLACEHOLDER_HTML = FULL_UPLOAD_UI_HTML
 
 
 class RequestError(ValueError):
@@ -277,7 +794,7 @@ def _validate_complete_pcm_wav(path) -> object:
     return wav_info
 
 
-def make_handler(service, html: str | bytes = _PLACEHOLDER_HTML):
+def make_handler(service, html: str | bytes = FULL_UPLOAD_UI_HTML):
     html_bytes = html.encode("utf-8") if isinstance(html, str) else bytes(html)
 
     class UploadHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -346,7 +863,9 @@ def make_handler(service, html: str | bytes = _PLACEHOLDER_HTML):
     return UploadHTTPRequestHandler
 
 
-def create_server(host: str, port: int, service) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer((host, port), make_handler(service))
+def create_server(
+    host: str, port: int, service, html: str | bytes = FULL_UPLOAD_UI_HTML
+) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer((host, port), make_handler(service, html))
     server.daemon_threads = True
     return server
