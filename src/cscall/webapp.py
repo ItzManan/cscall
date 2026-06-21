@@ -34,10 +34,16 @@ class SpeakerTranscriptionService:
     ):
         self._transcriber = transcriber
         self._diarizer = diarizer
-        self._transcriber_factory = transcriber_factory or _default_transcriber_factory
-        self._diarizer_factory = diarizer_factory or _default_diarizer_factory
-        self._clock = clock or time.perf_counter
-        self._lock = lock or threading.Lock()
+        self._transcriber_factory = (
+            transcriber_factory
+            if transcriber_factory is not None
+            else _default_transcriber_factory
+        )
+        self._diarizer_factory = (
+            diarizer_factory if diarizer_factory is not None else _default_diarizer_factory
+        )
+        self._clock = clock if clock is not None else time.perf_counter
+        self._lock = lock if lock is not None else threading.Lock()
 
     def transcribe_wav(self, path):
         path_str = str(path)
@@ -49,7 +55,6 @@ class SpeakerTranscriptionService:
             turns = self._get_diarizer().diarize(path_str)
             words = self._get_transcriber().transcribe_words(path_str)
 
-        finished = self._clock()
         segments = []
         for group in group_speaker_words(fuse_words(words, turns)):
             segments.append(
@@ -61,6 +66,7 @@ class SpeakerTranscriptionService:
                 }
             )
 
+        finished = self._clock()
         processing_ms = int(round((finished - started) * 1000))
         rtf = 0.0 if audio_seconds == 0 else (processing_ms / 1000) / audio_seconds
 

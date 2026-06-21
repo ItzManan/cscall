@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from cscall.fusion import SpeakerTurn, TimedWord
+import cscall.webapp as webapp
 from cscall.webapp import SpeakerTranscriptionService
 
 
@@ -262,3 +263,135 @@ def test_transcribe_wav_holds_the_lock_around_both_model_calls(tmp_path: Path):
         ("transcribe", 1),
         "lock_exit",
     ]
+
+
+def test_transcribe_wav_reads_final_clock_after_grouping(
+    monkeypatch, tmp_path: Path
+):
+    audio_path = tmp_path / "timed.wav"
+    _write_pcm_wav(audio_path)
+
+    grouped = {"value": False}
+
+    class FinalClock:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self) -> float:
+            self.calls += 1
+            if self.calls == 1:
+                return 1.0
+            assert grouped["value"], "grouping should happen before the final clock"
+            return 1.25
+
+    class FakeDiarizer:
+        def diarize(self, path: str):
+            return [SpeakerTurn(0.0, 1.0, "SPEAKER_00")]
+
+    class FakeTranscriber:
+        def transcribe_words(self, path: str):
+            return [TimedWord(0.0, 0.5, "hello")]
+
+    def fake_group_speaker_words(words):
+        grouped["value"] = True
+        return [words]
+
+    monkeypatch.setattr(webapp, "group_speaker_words", fake_group_speaker_words)
+
+    service = SpeakerTranscriptionService(
+        transcriber=FakeTranscriber(),
+        diarizer=FakeDiarizer(),
+        clock=FinalClock(),
+        lock=RecordingLock([]),
+    )
+
+    result = service.transcribe_wav(audio_path)
+
+    assert result["processing_ms"] == 250
+    assert grouped["value"] is True
+
+
+def test_transcribe_wav_retains_falsey_injected_factories_clock_and_lock(
+    monkeypatch, tmp_path: Path
+):
+    audio_path = tmp_path / "falsey.wav"
+    _write_pcm_wav(audio_path)
+
+    log: list[str] = []
+
+    class FalseyClock:
+        def __init__(self):
+            self.values = iter([2.0, 2.25])
+
+        def __bool__(self):
+            return False
+
+        def __call__(self) -> float:
+            log.append("clock")
+            return next(self.values)
+
+    class FalseyLock:
+        def __bool__(self):
+            return False
+
+        def __enter__(self):
+            log.append("lock_enter")
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            log.append("lock_exit")
+            return False
+
+    class FakeDiarizer:
+        def diarize(self, path: str):
+            log.append("diarize")
+            return [SpeakerTurn(0.0, 1.0, "SPEAKER_00")]
+
+    class FakeTranscriber:
+        def transcribe_words(self, path: str):
+            log.append("transcribe")
+            return [TimedWord(0.0, 0.5, "hello")]
+
+    class FalseyFactory:
+        def __init__(self, name: str, value):
+            self.name = name
+            self.value = value
+
+        def __bool__(self):
+            return False
+
+        def __call__(self):
+            log.append(self.name)
+            return self.value
+
+    monkeypatch.setattr(
+        webapp,
+        "_default_transcriber_factory",
+        lambda: (_ for _ in ()).throw(AssertionError("default transcriber factory")),
+    )
+    monkeypatch.setattr(
+        webapp,
+        "_default_diarizer_factory",
+        lambda: (_ for _ in ()).throw(AssertionError("default diarizer factory")),
+    )
+
+    service = SpeakerTranscriptionService(
+        transcriber_factory=FalseyFactory("transcriber_factory", FakeTranscriber()),
+        diarizer_factory=FalseyFactory("diarizer_factory", FakeDiarizer()),
+        clock=FalseyClock(),
+        lock=FalseyLock(),
+    )
+
+    result = service.transcribe_wav(audio_path)
+
+    assert log == [
+        "clock",
+        "lock_enter",
+        "diarizer_factory",
+        "diarize",
+        "transcriber_factory",
+        "transcribe",
+        "lock_exit",
+        "clock",
+    ]
+    assert result["processing_ms"] == 250
