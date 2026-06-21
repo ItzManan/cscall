@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import inf
+from math import inf, isfinite
 
 
 UNKNOWN = "UNKNOWN"
@@ -41,7 +41,14 @@ class SpeakerWord:
 def fuse_words(words: list[TimedWord], turns: list[SpeakerTurn]) -> list[SpeakerWord]:
     fused: list[SpeakerWord] = []
     for word in words:
-        fused.append(SpeakerWord(word.start, word.end, word.text, _pick_speaker(word, turns)))
+        fused.append(
+            SpeakerWord(
+                word.start,
+                word.end,
+                word.text,
+                _pick_speaker(word, turns),
+            )
+        )
     return fused
 
 
@@ -99,7 +106,11 @@ def _pick_speaker(word: TimedWord, turns: list[SpeakerTurn]) -> str:
     best_turn = None
     best_distance = inf
     for turn in turns:
-        distance = _interval_distance(_midpoint(word.start, word.end), turn.start, turn.end)
+        distance = _interval_distance(
+            _midpoint(word.start, word.end),
+            turn.start,
+            turn.end,
+        )
         if (
             best_turn is None
             or distance < best_distance
@@ -145,6 +156,8 @@ def _format_time(seconds: float) -> str:
 
 
 def _validate_interval(start: float, end: float) -> None:
+    if not isfinite(start) or not isfinite(end):
+        raise ValueError("timestamps must be finite")
     if start < 0 or end < 0:
         raise ValueError("timestamps must be non-negative")
     if end < start:

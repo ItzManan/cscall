@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from math import inf, nan
 
 import pytest
 
@@ -56,6 +57,97 @@ def test_records_are_frozen_and_validate_time_bounds(
 
     with pytest.raises(ValueError):
         factory(**invalid_kwargs)
+
+
+@pytest.mark.parametrize(
+    "factory, field, bad_value, kwargs",
+    [
+        (
+            SpeakerTurn,
+            "start",
+            nan,
+            {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerTurn,
+            "start",
+            inf,
+            {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerTurn,
+            "start",
+            -inf,
+            {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerTurn,
+            "end",
+            nan,
+            {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerTurn,
+            "end",
+            inf,
+            {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerTurn,
+            "end",
+            -inf,
+            {"start": 0.0, "end": 1.0, "speaker": "SPEAKER_00"},
+        ),
+        (TimedWord, "start", nan, {"start": 0.0, "end": 1.0, "text": "hello"}),
+        (TimedWord, "start", inf, {"start": 0.0, "end": 1.0, "text": "hello"}),
+        (TimedWord, "start", -inf, {"start": 0.0, "end": 1.0, "text": "hello"}),
+        (TimedWord, "end", nan, {"start": 0.0, "end": 1.0, "text": "hello"}),
+        (TimedWord, "end", inf, {"start": 0.0, "end": 1.0, "text": "hello"}),
+        (TimedWord, "end", -inf, {"start": 0.0, "end": 1.0, "text": "hello"}),
+        (
+            SpeakerWord,
+            "start",
+            nan,
+            {"start": 0.0, "end": 1.0, "text": "hello", "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerWord,
+            "start",
+            inf,
+            {"start": 0.0, "end": 1.0, "text": "hello", "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerWord,
+            "start",
+            -inf,
+            {"start": 0.0, "end": 1.0, "text": "hello", "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerWord,
+            "end",
+            nan,
+            {"start": 0.0, "end": 1.0, "text": "hello", "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerWord,
+            "end",
+            inf,
+            {"start": 0.0, "end": 1.0, "text": "hello", "speaker": "SPEAKER_00"},
+        ),
+        (
+            SpeakerWord,
+            "end",
+            -inf,
+            {"start": 0.0, "end": 1.0, "text": "hello", "speaker": "SPEAKER_00"},
+        ),
+    ],
+)
+def test_records_reject_non_finite_timestamps(factory, field, bad_value, kwargs):
+    kwargs = dict(kwargs)
+    kwargs[field] = bad_value
+
+    with pytest.raises(ValueError):
+        factory(**kwargs)
 
 
 def test_assigns_word_to_turn_with_maximum_overlap():
