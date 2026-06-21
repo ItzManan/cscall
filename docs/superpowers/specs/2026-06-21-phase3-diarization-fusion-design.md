@@ -1,6 +1,6 @@
 # Phase 3 Diarization and Speaker Fusion Design
 
-**Date:** 2026-06-21  
+**Date:** 2026-06-21
 **Status:** Approved for specification review
 
 ## Goal
