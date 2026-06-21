@@ -75,3 +75,39 @@ python -m cscall.cli stream --audio call.wav --language hi
 `--fake-transcript` keeps the command model-free for demos and tests. When it is
 omitted, the CLI wires through `WhisperTranscriber` for the real transcription
 path. Diarization and a UI sit in later phases and are not part of this step.
+
+## Phase 3: speaker diarization workflow
+
+Phase 3 adds file-level, offline speaker diarization for saved audio. It is
+useful for post-call analysis and evaluation, but it does not provide rolling
+online speaker identities for the live service. Stable speaker identities remain
+part of the live streaming phase.
+
+Install the extra dependencies with:
+
+```bash
+pip install -e ".[dev,diarization]"
+```
+
+Before running diarization, set `HF_TOKEN` in your shell to a valid Hugging Face
+access token. Do not paste a real token into docs or commands. For example:
+
+```bash
+export HF_TOKEN=hf_your_token_here
+```
+
+The Community-1 model is available here:
+[pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+
+You must accept the model agreement on Hugging Face before the CLI can use it.
+
+```bash
+# File-level diarization for a local audio file
+python -m cscall.cli diarize --audio call.wav
+
+# Compare against a ground-truth RTTM file when you have one
+python -m cscall.cli diarize --audio call.wav --reference-rttm call.rttm
+
+# Transcribe and attribute speakers for a local audio file
+python -m cscall.cli transcribe-speakers --audio call.wav --model small
+```
