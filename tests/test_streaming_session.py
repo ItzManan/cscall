@@ -109,7 +109,7 @@ def test_streaming_session_preserves_decode_cadence_remainder():
     assert calls == [b"abc", b"abcd"]
 
 
-def test_streaming_session_slow_decode_skips_one_intermediate_but_still_finalizes():
+def test_streaming_session_slow_decode_keeps_cadence_counter_and_finalizes_remainder():
     calls = []
 
     def transcribe(audio: bytes) -> str:
@@ -127,18 +127,29 @@ def test_streaming_session_slow_decode_skips_one_intermediate_but_still_finalize
     )
 
     events = []
-    for chunk in [
+    chunks = [
         AudioChunk(timestamp_ms=100, duration_ms=100, data=b"a", is_speech=True),
         AudioChunk(timestamp_ms=200, duration_ms=100, data=b"b", is_speech=True),
         AudioChunk(timestamp_ms=300, duration_ms=100, data=b"c", is_speech=True),
         AudioChunk(timestamp_ms=400, duration_ms=100, data=b"d", is_speech=True),
-        AudioChunk(timestamp_ms=500, duration_ms=100, data=b"", is_speech=False),
-        AudioChunk(timestamp_ms=600, duration_ms=100, data=b"", is_speech=False),
-    ]:
+        AudioChunk(timestamp_ms=500, duration_ms=100, data=b"e", is_speech=True),
+        AudioChunk(timestamp_ms=600, duration_ms=100, data=b"f", is_speech=True),
+        AudioChunk(timestamp_ms=750, duration_ms=150, data=b"g", is_speech=True),
+        AudioChunk(timestamp_ms=850, duration_ms=100, data=b"", is_speech=False),
+        AudioChunk(timestamp_ms=950, duration_ms=100, data=b"", is_speech=False),
+    ]
+    for index, chunk in enumerate(chunks):
         events.extend(session.update(chunk))
+        if index == 2:
+            assert calls == [b"a", b"abc"]
+        if index == 3:
+            assert calls == [b"a", b"abc", b"abcd"]
+        if index == 5:
+            assert calls == [b"a", b"abc", b"abcd", b"abcde", b"abcdef"]
+        if index == 6:
+            assert session._audio_since_decode_ms == 50
 
-    assert len(calls) == 3
-    assert calls == [b"a", b"abc", b"abcd"]
+    assert calls == [b"a", b"abc", b"abcd", b"abcde", b"abcdef", b"abcdefg", b"abcdefg"]
     assert any(event.type == "final" for event in events)
 
 
