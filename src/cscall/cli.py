@@ -11,19 +11,41 @@ from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
 from cscall.streaming.audio import WavInfo, is_speech_pcm, validate_pcm_wav
 from cscall.streaming.endpointing import EndpointConfig, EndpointDetector
+from cscall.streaming.metrics import summarize_metrics
 from cscall.streaming.session import AudioChunk, StreamingSession
 
 
 def _add_stream_parser(subparsers: argparse._SubParsersAction) -> None:
-    stream = subparsers.add_parser("stream", help="run the phase 2 streaming demo")
-    stream.add_argument("--audio", required=True)
-    stream.add_argument("--model", default="small")
-    stream.add_argument("--chunk-ms", dest="chunk_ms", type=int, default=500)
-    stream.add_argument("--agreement", type=int, default=2)
-    stream.add_argument("--compute-type", dest="compute_type", default="int8")
-    stream.add_argument("--device", default="cpu")
-    stream.add_argument("--energy-threshold", dest="energy_threshold", type=int, default=200)
-    stream.add_argument("--fake-transcript", dest="fake_transcript", default=None)
+    _add_stream_like_parser(
+        subparsers, "stream", "run the phase 2 streaming demo"
+    )
+
+
+def _add_benchmark_parser(subparsers: argparse._SubParsersAction) -> None:
+    _add_stream_like_parser(
+        subparsers,
+        "benchmark",
+        "benchmark the phase 2 streaming demo",
+        multiple_audio=True,
+    )
+
+
+def _add_stream_like_parser(
+    subparsers: argparse._SubParsersAction,
+    name: str,
+    help: str,
+    *,
+    multiple_audio: bool = False,
+) -> None:
+    parser = subparsers.add_parser(name, help=help)
+    parser.add_argument("--audio", required=True, nargs="+" if multiple_audio else None)
+    parser.add_argument("--model", default="small")
+    parser.add_argument("--chunk-ms", dest="chunk_ms", type=int, default=500)
+    parser.add_argument("--agreement", type=int, default=2)
+    parser.add_argument("--compute-type", dest="compute_type", default="int8")
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--energy-threshold", dest="energy_threshold", type=int, default=200)
+    parser.add_argument("--fake-transcript", dest="fake_transcript", default=None)
 
 
 def _iter_wav_chunks(
@@ -86,6 +108,20 @@ def _append_silence_chunks(
         )
 
 
+def _build_transcribe(args, wav_info: WavInfo, transcriber: WhisperTranscriber | None = None):
+    if args.fake_transcript is not None:
+
+        def transcribe(_audio: bytes) -> str:
+            return args.fake_transcript
+
+        return transcribe
+
+    model = transcriber or WhisperTranscriber(
+        model_size=args.model, device=args.device, compute_type=args.compute_type
+    )
+    return _build_wav_transcribe(model, wav_info)
+
+
 def _build_wav_transcribe(transcriber: WhisperTranscriber, wav_info: WavInfo):
     def _transcribe(audio: bytes) -> str:
         temp_path = None
@@ -108,6 +144,30 @@ def _build_wav_transcribe(transcriber: WhisperTranscriber, wav_info: WavInfo):
     return _transcribe
 
 
+def _run_stream_session(
+    args: argparse.Namespace,
+    audio_path: str,
+    transcriber: WhisperTranscriber | None = None,
+):
+    wav_info = validate_pcm_wav(audio_path)
+    chunks, _ = _iter_wav_chunks(audio_path, args.chunk_ms, args.energy_threshold)
+    endpoint_detector = EndpointDetector(EndpointConfig(frame_ms=args.chunk_ms))
+    transcribe = _build_transcribe(args, wav_info, transcriber=transcriber)
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=args.chunk_ms,
+        agreement=args.agreement,
+        endpoint_detector=endpoint_detector,
+    )
+
+    _append_silence_chunks(chunks, args.chunk_ms, endpoint_detector)
+    events = []
+    for chunk in chunks:
+        events.extend(session.update(chunk))
+    return events
+
+
 def _print_stream_events(events) -> None:
     for event in events:
         if event.type == "metrics" and event.metrics is not None:
@@ -119,31 +179,46 @@ def _print_stream_events(events) -> None:
 
 
 def _run_stream(args: argparse.Namespace) -> None:
-    wav_info = validate_pcm_wav(args.audio)
-    chunks, _ = _iter_wav_chunks(args.audio, args.chunk_ms, args.energy_threshold)
-    endpoint_detector = EndpointDetector(EndpointConfig(frame_ms=args.chunk_ms))
+    _print_stream_events(_run_stream_session(args, args.audio))
 
-    if args.fake_transcript is not None:
 
-        def transcribe(_audio: bytes) -> str:
-            return args.fake_transcript
+def _format_benchmark_value(value):
+    if value is None:
+        return "n/a"
+    return f"{value:g}"
 
-    else:
+
+def _render_benchmark_table(summary: dict[str, dict[str, int | float | None]]) -> str:
+    rows = [
+        "| Metric | p50 | p99 |",
+        "|---|---:|---:|",
+        "| RTF | "
+        f"{_format_benchmark_value(summary['rtf']['p50'])} | "
+        f"{_format_benchmark_value(summary['rtf']['p99'])} |",
+        "| first_partial_ms | "
+        f"{_format_benchmark_value(summary['first_partial_ms']['p50'])} | "
+        f"{_format_benchmark_value(summary['first_partial_ms']['p99'])} |",
+        "| final_ms | "
+        f"{_format_benchmark_value(summary['final_ms']['p50'])} | "
+        f"{_format_benchmark_value(summary['final_ms']['p99'])} |",
+    ]
+    return "\n".join(rows)
+
+
+def _run_benchmark(args: argparse.Namespace) -> None:
+    transcriber = None
+    if args.fake_transcript is None:
         transcriber = WhisperTranscriber(
             model_size=args.model, device=args.device, compute_type=args.compute_type
         )
-        transcribe = _build_wav_transcribe(transcriber, wav_info)
 
-    session = StreamingSession(
-        transcribe=transcribe,
-        step_ms=args.chunk_ms,
-        agreement=args.agreement,
-        endpoint_detector=endpoint_detector,
-    )
+    metrics = []
+    for audio_path in args.audio:
+        for event in _run_stream_session(args, audio_path, transcriber=transcriber):
+            if event.type == "metrics" and event.metrics is not None:
+                metrics.append(event.metrics)
 
-    _append_silence_chunks(chunks, args.chunk_ms, endpoint_detector)
-    for chunk in chunks:
-        _print_stream_events(session.update(chunk))
+    print(_render_benchmark_table(summarize_metrics(metrics)))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -166,6 +241,7 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--device", default="cpu", help="cpu or cuda")
 
     _add_stream_parser(sub)
+    _add_benchmark_parser(sub)
     return parser
 
 
@@ -195,6 +271,8 @@ def main(argv: list[str] | None = None) -> None:
         print(render_comparison_markdown(result))
     elif args.command == "stream":
         _run_stream(args)
+    elif args.command == "benchmark":
+        _run_benchmark(args)
 
 
 if __name__ == "__main__":

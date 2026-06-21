@@ -117,3 +117,30 @@ def test_stream_subcommand_parses_custom_energy_threshold():
 
     assert args.command == "stream"
     assert args.energy_threshold == 37
+
+
+def test_benchmark_subcommand_parses_multiple_audio_paths_and_defaults():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "benchmark",
+            "--audio",
+            "tests/fixtures/audio/a.wav",
+            "tests/fixtures/audio/b.wav",
+            "--fake-transcript",
+            "hello",
+        ]
+    )
+
+    assert args.command == "benchmark"
+    assert args.audio == [
+        "tests/fixtures/audio/a.wav",
+        "tests/fixtures/audio/b.wav",
+    ]
+    assert args.model == "small"
+    assert args.chunk_ms == 500
+    assert args.agreement == 2
+    assert args.compute_type == "int8"
+    assert args.device == "cpu"
+    assert args.energy_threshold == 200
+    assert args.fake_transcript == "hello"

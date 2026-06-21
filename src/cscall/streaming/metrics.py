@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
+from statistics import median
+from typing import Iterable
 
 
 @dataclass(frozen=True)
@@ -80,3 +83,30 @@ class MetricsTracker:
             first_partial_latency_ms=self._first_partial_latency_ms,
             final_latency_ms=self._final_latency_ms,
         )
+
+
+def summarize_metrics(metrics: Iterable[StreamingMetrics]) -> dict[str, dict[str, int | float | None]]:
+    items = list(metrics)
+    return {
+        "rtf": _summarize_values([item.rtf for item in items]),
+        "first_partial_ms": _summarize_values(
+            [item.first_partial_latency_ms for item in items]
+        ),
+        "final_ms": _summarize_values([item.final_latency_ms for item in items]),
+    }
+
+
+def _summarize_values(values: Iterable[int | float | None]) -> dict[str, int | float | None]:
+    samples = [value for value in values if value is not None]
+    if not samples:
+        return {"p50": None, "p99": None}
+
+    sorted_samples = sorted(samples)
+    return {
+        "p50": median(sorted_samples),
+        "p99": sorted_samples[_nearest_rank_index(len(sorted_samples))],
+    }
+
+
+def _nearest_rank_index(count: int) -> int:
+    return max(0, ceil(0.99 * count) - 1)

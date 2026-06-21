@@ -3,6 +3,8 @@ import wave
 
 import cscall.cli as cli
 import pytest
+from cscall.streaming.metrics import StreamingMetrics
+from cscall.streaming.session import StreamingEvent
 
 
 def test_stream_fake_transcript_runs_without_instantiating_whisper(
@@ -100,3 +102,56 @@ def test_stream_rejects_truncated_pcm_frame_before_model_construction(
         ValueError, match=rf"{audio_path} is not a supported PCM WAV"
     ):
         cli.main(["stream", "--audio", str(audio_path)])
+
+
+def test_benchmark_aggregates_metrics_into_markdown_table(monkeypatch, capsys):
+    calls = []
+
+    def fake_run_stream_session(*call_args, **call_kwargs):
+        audio_path = call_args[1]
+        calls.append(audio_path)
+        if audio_path.endswith("a.wav"):
+            metrics = StreamingMetrics(
+                audio_ms=1000,
+                decode_ms=100,
+                first_partial_latency_ms=100,
+                final_latency_ms=10,
+            )
+        else:
+            metrics = StreamingMetrics(
+                audio_ms=1000,
+                decode_ms=300,
+                first_partial_latency_ms=300,
+                final_latency_ms=30,
+            )
+        return [
+            StreamingEvent(
+                type="metrics",
+                timestamp_ms=1,
+                metrics=metrics,
+            )
+        ]
+
+    monkeypatch.setattr(cli, "_run_stream_session", fake_run_stream_session)
+
+    cli.main(
+        [
+            "benchmark",
+            "--audio",
+            str(Path("tests/fixtures/audio/a.wav")),
+            str(Path("tests/fixtures/audio/b.wav")),
+            "--fake-transcript",
+            "hello world",
+        ]
+    )
+
+    out = capsys.readouterr().out
+
+    assert calls == [
+        "tests/fixtures/audio/a.wav",
+        "tests/fixtures/audio/b.wav",
+    ]
+    assert "| Metric | p50 | p99 |" in out
+    assert "| RTF | 0.2 | 0.3 |" in out
+    assert "| first_partial_ms | 200 | 300 |" in out
+    assert "| final_ms | 20 | 30 |" in out
