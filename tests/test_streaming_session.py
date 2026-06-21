@@ -6,6 +6,50 @@ def _collect_types(events):
     return [event.type for event in events]
 
 
+def test_streaming_session_flush_before_speech_is_empty():
+    session = StreamingSession(
+        transcribe=lambda _audio: "ignored",
+        step_ms=500,
+        agreement=2,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=200)
+        ),
+    )
+
+    assert session.flush(123) == []
+
+
+def test_streaming_session_flush_finalizes_active_short_utterance_once():
+    calls = []
+
+    def transcribe(audio: bytes) -> str:
+        calls.append(audio)
+        return "short"
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=500,
+        agreement=1,
+        endpoint_detector=EndpointDetector(
+            EndpointConfig(frame_ms=100, min_speech_ms=100, trailing_silence_ms=200)
+        ),
+    )
+
+    session.update(
+        AudioChunk(timestamp_ms=100, duration_ms=100, data=b"a", is_speech=True)
+    )
+
+    events = session.flush(250)
+
+    assert calls == [b"a"]
+    assert _collect_types(events) == ["stable", "final", "metrics"]
+    assert [event.text for event in events if event.type in {"stable", "final"}] == [
+        "short",
+        "short",
+    ]
+    assert session.flush(300) == []
+
+
 def test_streaming_session_emits_partial_stable_final_and_metrics_in_order():
     hypotheses = iter(["hello wor", "hello wor", "hello world"])
 

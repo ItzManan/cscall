@@ -82,6 +82,11 @@ class StreamingSession:
 
         return events
 
+    def flush(self, timestamp_ms: int) -> list[StreamingEvent]:
+        if not self._in_utterance:
+            return []
+        return self._finalize(timestamp_ms)
+
     def _begin_utterance(self, timestamp_ms: int) -> None:
         self._metrics = MetricsTracker()
         self._agreement = LocalAgreement(agreement=self._agreement_size)
