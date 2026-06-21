@@ -39,3 +39,18 @@ fine-tune targets. Reproduce with:
 python -m cscall.cli baseline --manifest data/manifests/codeswitch_test.jsonl \
     --model small --group-by cs_bucket
 ```
+
+## Phase 2: streaming demo
+
+The Phase 2 CLI adds a local streaming smoke test over a WAV file. It chunks the
+audio, runs the existing streaming session, and prints `stable`, `partial`,
+`final`, and metrics lines.
+
+```bash
+python -m cscall.cli stream --audio tests/fixtures/audio/a.wav \
+    --fake-transcript "hello world"
+```
+
+`--fake-transcript` keeps the command model-free for demos and tests. When it is
+omitted, the CLI wires through `WhisperTranscriber` for the real transcription
+path. Diarization and a UI sit in later phases and are not part of this step.

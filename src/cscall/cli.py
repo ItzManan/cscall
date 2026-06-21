@@ -1,11 +1,140 @@
-"""CLI: `python -m cscall.cli baseline --manifest <path> [--model small] [--group-by accent]`."""
+"""CLI for baseline, compare, and streaming demo workflows."""
 import argparse
 import json
+import os
+import tempfile
+import wave
 
 from cscall.asr_baseline import WhisperTranscriber
 from cscall.compare import compare_models, render_comparison_markdown
 from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
+from cscall.streaming.endpointing import EndpointConfig, EndpointDetector
+from cscall.streaming.session import AudioChunk, StreamingSession
+
+
+def _add_stream_parser(subparsers: argparse._SubParsersAction) -> None:
+    stream = subparsers.add_parser("stream", help="run the phase 2 streaming demo")
+    stream.add_argument("--audio", required=True)
+    stream.add_argument("--model", default="small")
+    stream.add_argument("--chunk-ms", dest="chunk_ms", type=int, default=500)
+    stream.add_argument("--agreement", type=int, default=2)
+    stream.add_argument("--compute-type", dest="compute_type", default="int8")
+    stream.add_argument("--device", default="cpu")
+    stream.add_argument("--fake-transcript", dest="fake_transcript", default=None)
+
+
+def _iter_wav_chunks(
+    audio_path: str, chunk_ms: int
+) -> tuple[list[AudioChunk], tuple[int, int, int]]:
+    chunks: list[AudioChunk] = []
+    with wave.open(audio_path, "rb") as wav:
+        channels = wav.getnchannels()
+        sample_rate = wav.getframerate()
+        sampwidth = wav.getsampwidth()
+        frames_per_chunk = max(1, int(sample_rate * chunk_ms / 1000))
+        timestamp_ms = 0
+
+        while True:
+            data = wav.readframes(frames_per_chunk)
+            if not data:
+                break
+
+            frames_read = len(data) // (channels * sampwidth)
+            duration_ms = max(1, round(frames_read * 1000 / sample_rate))
+            timestamp_ms += duration_ms
+            chunks.append(
+                AudioChunk(
+                    timestamp_ms=timestamp_ms,
+                    duration_ms=duration_ms,
+                    data=data,
+                    is_speech=any(byte != 0 for byte in data),
+                )
+            )
+
+    return chunks, (sample_rate, channels, sampwidth)
+
+
+def _append_silence_chunks(
+    chunks: list[AudioChunk], chunk_ms: int, detector: EndpointDetector
+) -> None:
+    silence_chunks = max(
+        1,
+        (detector.config.trailing_silence_ms + detector.config.frame_ms - 1)
+        // detector.config.frame_ms,
+    )
+    timestamp_ms = chunks[-1].timestamp_ms if chunks else 0
+    for _ in range(silence_chunks):
+        timestamp_ms += chunk_ms
+        chunks.append(
+            AudioChunk(
+                timestamp_ms=timestamp_ms,
+                duration_ms=chunk_ms,
+                data=b"",
+                is_speech=False,
+            )
+        )
+
+
+def _build_wav_transcribe(
+    transcriber: WhisperTranscriber, sample_rate: int, channels: int, sampwidth: int
+):
+    def _transcribe(audio: bytes) -> str:
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                temp_path = tmp.name
+            with wave.open(temp_path, "wb") as wav_out:
+                wav_out.setnchannels(channels)
+                wav_out.setsampwidth(sampwidth)
+                wav_out.setframerate(sample_rate)
+                wav_out.writeframes(audio)
+            return transcriber.transcribe(temp_path)
+        finally:
+            if temp_path is not None:
+                try:
+                    os.unlink(temp_path)
+                except FileNotFoundError:
+                    pass
+
+    return _transcribe
+
+
+def _print_stream_events(events) -> None:
+    for event in events:
+        if event.type == "metrics" and event.metrics is not None:
+            print(event.metrics.render())
+        elif event.text:
+            print(f"{event.type}\t{event.timestamp_ms}\t{event.text}")
+        else:
+            print(f"{event.type}\t{event.timestamp_ms}")
+
+
+def _run_stream(args: argparse.Namespace) -> None:
+    chunks, (sample_rate, channels, sampwidth) = _iter_wav_chunks(args.audio, args.chunk_ms)
+    endpoint_detector = EndpointDetector(EndpointConfig(frame_ms=args.chunk_ms))
+
+    if args.fake_transcript is not None:
+
+        def transcribe(_audio: bytes) -> str:
+            return args.fake_transcript
+
+    else:
+        transcriber = WhisperTranscriber(
+            model_size=args.model, device=args.device, compute_type=args.compute_type
+        )
+        transcribe = _build_wav_transcribe(transcriber, sample_rate, channels, sampwidth)
+
+    session = StreamingSession(
+        transcribe=transcribe,
+        step_ms=args.chunk_ms,
+        agreement=args.agreement,
+        endpoint_detector=endpoint_detector,
+    )
+
+    _append_silence_chunks(chunks, args.chunk_ms, endpoint_detector)
+    for chunk in chunks:
+        _print_stream_events(session.update(chunk))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,6 +155,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--group-by", dest="group_by", default=None)
     c.add_argument("--compute-type", dest="compute_type", default="int8")
     c.add_argument("--device", default="cpu", help="cpu or cuda")
+
+    _add_stream_parser(sub)
     return parser
 
 
@@ -53,6 +184,8 @@ def main(argv: list[str] | None = None) -> None:
             utts, baseline.transcribe, finetuned.transcribe, group_by=args.group_by
         )
         print(render_comparison_markdown(result))
+    elif args.command == "stream":
+        _run_stream(args)
 
 
 if __name__ == "__main__":

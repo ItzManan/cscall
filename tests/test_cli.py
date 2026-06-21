@@ -54,3 +54,48 @@ def test_compare_subcommand_parses():
     assert args.baseline_model == "small"
     assert args.finetuned_ct2 == "out/ct2"
     assert args.group_by == "accent"
+
+
+def test_stream_subcommand_parses_with_defaults():
+    parser = build_parser()
+    args = parser.parse_args(["stream", "--audio", "tests/fixtures/audio/a.wav"])
+
+    assert args.command == "stream"
+    assert args.audio == "tests/fixtures/audio/a.wav"
+    assert args.model == "small"
+    assert args.chunk_ms == 500
+    assert args.agreement == 2
+    assert args.compute_type == "int8"
+    assert args.device == "cpu"
+    assert args.fake_transcript is None
+
+
+def test_stream_subcommand_parses_custom_options():
+    parser = build_parser()
+    args = parser.parse_args(
+        [
+            "stream",
+            "--audio",
+            "tests/fixtures/audio/a.wav",
+            "--model",
+            "tiny",
+            "--chunk-ms",
+            "250",
+            "--agreement",
+            "3",
+            "--compute-type",
+            "float16",
+            "--device",
+            "cuda",
+            "--fake-transcript",
+            "hello",
+        ]
+    )
+
+    assert args.command == "stream"
+    assert args.model == "tiny"
+    assert args.chunk_ms == 250
+    assert args.agreement == 3
+    assert args.compute_type == "float16"
+    assert args.device == "cuda"
+    assert args.fake_transcript == "hello"
