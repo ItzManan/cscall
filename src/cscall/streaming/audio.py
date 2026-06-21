@@ -36,7 +36,12 @@ def validate_pcm_wav(path: str | Path) -> WavInfo:
     except (wave.Error, EOFError):
         raise ValueError(f"{path_str} is not a supported PCM WAV") from None
 
-    if comptype != "NONE" or sample_rate <= 0 or channels <= 0 or sample_width <= 0:
+    if (
+        comptype != "NONE"
+        or sample_rate <= 0
+        or channels <= 0
+        or sample_width not in (1, 2, 3, 4)
+    ):
         raise ValueError(f"{path_str} is not a supported PCM WAV")
 
     return WavInfo(

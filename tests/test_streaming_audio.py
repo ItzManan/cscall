@@ -95,6 +95,17 @@ def test_validate_pcm_wav_rejects_unsupported_pcm_metadata(monkeypatch, tmp_path
         audio.validate_pcm_wav(path)
 
 
+def test_validate_pcm_wav_rejects_unsupported_sample_width(monkeypatch, tmp_path):
+    path = tmp_path / "wide.wav"
+    path.write_bytes(b"placeholder")
+    monkeypatch.setattr(wave, "open", lambda *args, **kwargs: _FakeWave(sampwidth=5))
+
+    with pytest.raises(
+        ValueError, match=rf"{re.escape(str(path))} is not a supported PCM WAV"
+    ):
+        audio.validate_pcm_wav(path)
+
+
 def test_validate_pcm_wav_wraps_wave_errors(tmp_path):
     path = tmp_path / "bad.wav"
     path.write_bytes(b"not a wav")
@@ -102,4 +113,12 @@ def test_validate_pcm_wav_wraps_wave_errors(tmp_path):
     with pytest.raises(
         ValueError, match=rf"{re.escape(str(path))} is not a supported PCM WAV"
     ):
+        audio.validate_pcm_wav(path)
+
+
+def test_validate_pcm_wav_preserves_file_not_found(monkeypatch, tmp_path):
+    path = tmp_path / "missing.wav"
+    monkeypatch.setattr(wave, "open", lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError(str(path))))
+
+    with pytest.raises(FileNotFoundError):
         audio.validate_pcm_wav(path)
