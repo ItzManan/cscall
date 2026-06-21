@@ -45,12 +45,20 @@ def _iter_wav_chunks(
             frames_read = len(data) // (channels * sampwidth)
             duration_ms = max(1, round(frames_read * 1000 / sample_rate))
             timestamp_ms += duration_ms
+            try:
+                is_speech = is_speech_pcm(data, sampwidth, energy_threshold)
+            except ValueError as exc:
+                if str(exc) == "PCM data must contain a whole number of frames":
+                    raise ValueError(
+                        f"{audio_path} is not a supported PCM WAV"
+                    ) from None
+                raise
             chunks.append(
                 AudioChunk(
                     timestamp_ms=timestamp_ms,
                     duration_ms=duration_ms,
                     data=data,
-                    is_speech=is_speech_pcm(data, sampwidth, energy_threshold),
+                    is_speech=is_speech,
                 )
             )
 

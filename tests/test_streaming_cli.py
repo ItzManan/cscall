@@ -1,4 +1,5 @@
 from pathlib import Path
+import wave
 
 import cscall.cli as cli
 import pytest
@@ -77,3 +78,25 @@ def test_stream_rejects_invalid_wav_before_model_construction(monkeypatch):
                 "3",
             ]
         )
+
+
+def test_stream_rejects_truncated_pcm_frame_before_model_construction(
+    monkeypatch, tmp_path
+):
+    def boom(*args, **kwargs):
+        raise AssertionError("WhisperTranscriber should not be instantiated")
+
+    audio_path = tmp_path / "truncated.wav"
+    with wave.open(str(audio_path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b"\x00\x00\x01\x00")
+    audio_path.write_bytes(audio_path.read_bytes()[:-1])
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", boom)
+
+    with pytest.raises(
+        ValueError, match=rf"{audio_path} is not a supported PCM WAV"
+    ):
+        cli.main(["stream", "--audio", str(audio_path)])
