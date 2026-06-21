@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
+from pathlib import Path
+import wave
+
+
+@dataclass(frozen=True)
+class WavInfo:
+    sample_rate: int
+    channels: int
+    sample_width: int
 
 
 def is_speech_pcm(data: bytes, sample_width: int, threshold: int) -> bool:
@@ -13,6 +23,25 @@ def is_speech_pcm(data: bytes, sample_width: int, threshold: int) -> bool:
     if len(data) % sample_width != 0:
         raise ValueError("PCM data must contain a whole number of frames")
     return _pcm_rms_16bit(data, sample_width) > threshold
+
+
+def validate_pcm_wav(path: str | Path) -> WavInfo:
+    path_str = str(path)
+    try:
+        with wave.open(path_str, "rb") as wav:
+            comptype = wav.getcomptype()
+            sample_rate = wav.getframerate()
+            channels = wav.getnchannels()
+            sample_width = wav.getsampwidth()
+    except (wave.Error, EOFError):
+        raise ValueError(f"{path_str} is not a supported PCM WAV") from None
+
+    if comptype != "NONE" or sample_rate <= 0 or channels <= 0 or sample_width <= 0:
+        raise ValueError(f"{path_str} is not a supported PCM WAV")
+
+    return WavInfo(
+        sample_rate=sample_rate, channels=channels, sample_width=sample_width
+    )
 
 
 def _pcm_rms_16bit(data: bytes, sample_width: int) -> int:

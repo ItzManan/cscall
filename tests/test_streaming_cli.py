@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import cscall.cli as cli
+import pytest
 
 
 def test_stream_fake_transcript_runs_without_instantiating_whisper(
@@ -54,3 +55,25 @@ def test_stream_forwards_energy_threshold_to_chunk_reader(monkeypatch, capsys):
 
     capsys.readouterr()
     assert seen["args"] == ("tests/fixtures/audio/a.wav", 500, 321)
+
+
+def test_stream_rejects_invalid_wav_before_model_construction(monkeypatch):
+    def boom(*args, **kwargs):
+        raise AssertionError("WhisperTranscriber should not be instantiated")
+
+    def bad_validate(path):
+        raise ValueError(f"{path} is not a supported PCM WAV")
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", boom)
+    monkeypatch.setattr(cli, "validate_pcm_wav", bad_validate)
+
+    with pytest.raises(ValueError, match="is not a supported PCM WAV"):
+        cli.main(
+            [
+                "stream",
+                "--audio",
+                str(Path("tests/fixtures/audio/a.wav")),
+                "--agreement",
+                "3",
+            ]
+        )

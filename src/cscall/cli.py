@@ -9,7 +9,7 @@ from cscall.asr_baseline import WhisperTranscriber
 from cscall.compare import compare_models, render_comparison_markdown
 from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
-from cscall.streaming.audio import is_speech_pcm
+from cscall.streaming.audio import WavInfo, is_speech_pcm, validate_pcm_wav
 from cscall.streaming.endpointing import EndpointConfig, EndpointDetector
 from cscall.streaming.session import AudioChunk, StreamingSession
 
@@ -78,18 +78,16 @@ def _append_silence_chunks(
         )
 
 
-def _build_wav_transcribe(
-    transcriber: WhisperTranscriber, sample_rate: int, channels: int, sampwidth: int
-):
+def _build_wav_transcribe(transcriber: WhisperTranscriber, wav_info: WavInfo):
     def _transcribe(audio: bytes) -> str:
         temp_path = None
         try:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 temp_path = tmp.name
             with wave.open(temp_path, "wb") as wav_out:
-                wav_out.setnchannels(channels)
-                wav_out.setsampwidth(sampwidth)
-                wav_out.setframerate(sample_rate)
+                wav_out.setnchannels(wav_info.channels)
+                wav_out.setsampwidth(wav_info.sample_width)
+                wav_out.setframerate(wav_info.sample_rate)
                 wav_out.writeframes(audio)
             return transcriber.transcribe(temp_path)
         finally:
@@ -113,9 +111,8 @@ def _print_stream_events(events) -> None:
 
 
 def _run_stream(args: argparse.Namespace) -> None:
-    chunks, (sample_rate, channels, sampwidth) = _iter_wav_chunks(
-        args.audio, args.chunk_ms, args.energy_threshold
-    )
+    wav_info = validate_pcm_wav(args.audio)
+    chunks, _ = _iter_wav_chunks(args.audio, args.chunk_ms, args.energy_threshold)
     endpoint_detector = EndpointDetector(EndpointConfig(frame_ms=args.chunk_ms))
 
     if args.fake_transcript is not None:
@@ -127,7 +124,7 @@ def _run_stream(args: argparse.Namespace) -> None:
         transcriber = WhisperTranscriber(
             model_size=args.model, device=args.device, compute_type=args.compute_type
         )
-        transcribe = _build_wav_transcribe(transcriber, sample_rate, channels, sampwidth)
+        transcribe = _build_wav_transcribe(transcriber, wav_info)
 
     session = StreamingSession(
         transcribe=transcribe,
