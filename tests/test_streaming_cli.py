@@ -168,6 +168,38 @@ def test_stream_fake_transcript_runs_without_instantiating_whisper(
     assert "Streaming metrics" in out
 
 
+def test_stream_silent_wav_with_fake_transcript_prints_fallback_metrics(
+    monkeypatch, tmp_path, capsys
+):
+    def boom(*args, **kwargs):
+        raise AssertionError("WhisperTranscriber should not be instantiated")
+
+    audio_path = tmp_path / "silent.wav"
+    with wave.open(str(audio_path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(b"\x00\x00" * 800)
+
+    monkeypatch.setattr(cli, "WhisperTranscriber", boom)
+
+    cli.main(
+        [
+            "stream",
+            "--audio",
+            str(audio_path),
+            "--fake-transcript",
+            "hello world",
+        ]
+    )
+
+    out = capsys.readouterr().out.splitlines()
+
+    assert out == [
+        "Streaming metrics | audio=0 ms | decode=0 ms | RTF=0.000 | first_partial=n/a | final=n/a"
+    ]
+
+
 def test_stream_forwards_energy_threshold_to_chunk_reader(monkeypatch, capsys):
     seen = {}
 

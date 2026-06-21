@@ -1,3 +1,5 @@
+import pytest
+
 from cscall.cli import build_parser
 
 
@@ -186,3 +188,48 @@ def test_benchmark_subcommand_parses_manifest_path():
     assert args.manifest == "tests/fixtures/mini_manifest.jsonl"
     assert args.audio is None
     assert args.language is None
+
+
+@pytest.mark.parametrize(
+    ("argv", "flag"),
+    [
+        (["stream", "--audio", "tests/fixtures/audio/a.wav", "--chunk-ms", "0"], "--chunk-ms"),
+        (["stream", "--audio", "tests/fixtures/audio/a.wav", "--agreement", "0"], "--agreement"),
+        (["stream", "--audio", "tests/fixtures/audio/a.wav", "--energy-threshold", "-1"], "--energy-threshold"),
+        (
+            [
+                "benchmark",
+                "--audio",
+                "tests/fixtures/audio/a.wav",
+                "--chunk-ms",
+                "0",
+            ],
+            "--chunk-ms",
+        ),
+        (
+            [
+                "benchmark",
+                "--audio",
+                "tests/fixtures/audio/a.wav",
+                "--agreement",
+                "-1",
+            ],
+            "--agreement",
+        ),
+        (
+            [
+                "benchmark",
+                "--audio",
+                "tests/fixtures/audio/a.wav",
+                "--energy-threshold",
+                "-1",
+            ],
+            "--energy-threshold",
+        ),
+    ],
+)
+def test_stream_and_benchmark_reject_nonpositive_numeric_args(argv, flag):
+    parser = build_parser()
+
+    with pytest.raises(SystemExit):
+        parser.parse_args(argv)

@@ -11,8 +11,22 @@ from cscall.eval_runner import render_markdown, run_eval
 from cscall.manifest import load_manifest
 from cscall.streaming.audio import WavInfo, is_speech_pcm, validate_pcm_wav
 from cscall.streaming.endpointing import EndpointConfig, EndpointDetector
-from cscall.streaming.metrics import summarize_metrics
-from cscall.streaming.session import AudioChunk, StreamingSession
+from cscall.streaming.metrics import StreamingMetrics, summarize_metrics
+from cscall.streaming.session import AudioChunk, StreamingEvent, StreamingSession
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
+def _non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be >= 0")
+    return parsed
 
 
 def _add_benchmark_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -25,12 +39,17 @@ def _add_benchmark_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def _add_stream_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", default="small")
-    parser.add_argument("--chunk-ms", dest="chunk_ms", type=int, default=500)
-    parser.add_argument("--agreement", type=int, default=2)
+    parser.add_argument("--chunk-ms", dest="chunk_ms", type=_positive_int, default=500)
+    parser.add_argument("--agreement", type=_positive_int, default=2)
     parser.add_argument("--compute-type", dest="compute_type", default="int8")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--language", default=None)
-    parser.add_argument("--energy-threshold", dest="energy_threshold", type=int, default=200)
+    parser.add_argument(
+        "--energy-threshold",
+        dest="energy_threshold",
+        type=_non_negative_int,
+        default=200,
+    )
     parser.add_argument("--fake-transcript", dest="fake_transcript", default=None)
 
 
@@ -185,7 +204,16 @@ def _print_stream_events(events) -> None:
 
 
 def _run_stream(args: argparse.Namespace) -> None:
-    _print_stream_events(_run_stream_session(args, args.audio))
+    events = _run_stream_session(args, args.audio)
+    if not any(event.type == "metrics" for event in events):
+        events.append(
+            StreamingEvent(
+                type="metrics",
+                timestamp_ms=0,
+                metrics=StreamingMetrics(),
+            )
+        )
+    _print_stream_events(events)
 
 
 def _format_benchmark_value(value):
