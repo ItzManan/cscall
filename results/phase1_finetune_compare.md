@@ -1,7 +1,5 @@
 # Phase 1 fine-tune eval results (2026-06-15)
 
-Full analysis: `docs/superpowers/findings/2026-06-15-phase1-finetune-findings.md`.
-
 ## Full GPU compare — 664 HiACC test clips (faster-whisper float16, language=None)
 
 | Group | Baseline WER | Fine-tuned WER | Δ WER |

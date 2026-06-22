@@ -1,7 +1,7 @@
 # cscall — Real-Time Speaker-Attributed Code-Switch ASR
 
 Streaming, speaker-attributed transcription for Indian-accented, Hindi-English
-code-switched support calls. See `docs/superpowers/specs/` for the design.
+code-switched support calls.
 
 ## Setup
 

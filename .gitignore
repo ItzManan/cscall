@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 *.egg-info/
-.claude/
 .venv/
 venv/
 node_modules/

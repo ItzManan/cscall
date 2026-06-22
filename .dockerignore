@@ -13,4 +13,4 @@ tests/fixtures/audio
 *.wav
 *.m4a
 uv.lock
-docs/superpowers
+docs
