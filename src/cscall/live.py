@@ -925,3 +925,22 @@ def create_live_app(
                     pass
 
     return app
+
+
+def run_live_server(
+    host: str,
+    port: int,
+    model: str = "small",
+    device: str = "cpu",
+    compute_type: str = "int8",
+    language: str | None = None,
+) -> None:
+    import uvicorn
+
+    app = create_live_app(
+        model=model,
+        device=device,
+        compute_type=compute_type,
+        language=language,
+    )
+    uvicorn.run(app, host=host, port=port)

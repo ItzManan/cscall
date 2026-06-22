@@ -1,4 +1,9 @@
+import os
+from pathlib import Path
 import pytest
+import subprocess
+import sys
+import types
 
 import cscall.cli as cli
 from cscall.cli import build_parser
@@ -191,11 +196,15 @@ def test_benchmark_subcommand_parses_manifest_path():
     assert args.language is None
 
 
-def test_ui_subcommand_parses_defaults():
+def test_ui_and_live_subcommands_parse_defaults():
     parser = build_parser()
-    args = parser.parse_args(["ui"])
+    ui_args = parser.parse_args(["ui"])
+    args = parser.parse_args(["live"])
 
-    assert args.command == "ui"
+    assert ui_args.command == "ui"
+    assert ui_args.host == "127.0.0.1"
+    assert ui_args.port == 8000
+    assert args.command == "live"
     assert args.host == "127.0.0.1"
     assert args.port == 8000
     assert args.model == "small"
@@ -204,11 +213,11 @@ def test_ui_subcommand_parses_defaults():
     assert args.language is None
 
 
-def test_ui_subcommand_parses_custom_model_and_runtime_options():
+def test_live_subcommand_parses_custom_model_and_runtime_options():
     parser = build_parser()
     args = parser.parse_args(
         [
-            "ui",
+            "live",
             "--host",
             "0.0.0.0",
             "--port",
@@ -224,7 +233,7 @@ def test_ui_subcommand_parses_custom_model_and_runtime_options():
         ]
     )
 
-    assert args.command == "ui"
+    assert args.command == "live"
     assert args.host == "0.0.0.0"
     assert args.port == 8123
     assert args.model == "medium"
@@ -234,24 +243,26 @@ def test_ui_subcommand_parses_custom_model_and_runtime_options():
 
 
 @pytest.mark.parametrize("port", ["0", "65536"])
-def test_ui_subcommand_rejects_invalid_port(port: str):
+def test_live_subcommand_rejects_invalid_port(port: str):
     parser = build_parser()
 
     with pytest.raises(SystemExit):
-        parser.parse_args(["ui", "--port", port])
+        parser.parse_args(["live", "--port", port])
 
 
-def test_main_ui_forwards_run_server_arguments(monkeypatch):
+def test_main_live_forwards_run_live_server_arguments(monkeypatch):
     captured = {}
 
-    def fake_run_server(**kwargs):
+    def fake_run_live_server(**kwargs):
         captured.update(kwargs)
 
-    monkeypatch.setattr(cli, "run_server", fake_run_server)
+    fake_live = types.ModuleType("cscall.live")
+    fake_live.run_live_server = fake_run_live_server
+    monkeypatch.setitem(sys.modules, "cscall.live", fake_live)
 
     cli.main(
         [
-            "ui",
+            "live",
             "--host",
             "0.0.0.0",
             "--port",
@@ -275,6 +286,36 @@ def test_main_ui_forwards_run_server_arguments(monkeypatch):
         "compute_type": "float16",
         "language": "hi",
     }
+
+
+def test_main_live_help_exits_zero_without_importing_live(monkeypatch):
+    real_import = __import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "cscall.live" and level == 0:
+            raise AssertionError("live module imported while rendering help")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", guarded_import)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["live", "--help"])
+
+    assert excinfo.value.code == 0
+
+
+def test_python_module_live_help_exits_zero(tmp_path):
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str((Path(__file__).resolve().parents[1] / "src"))
+    result = subprocess.run(
+        [sys.executable, "-m", "cscall.cli", "live", "--help"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
 
 
 def test_run_server_uses_lazy_model_factories_and_closes_on_keyboard_interrupt(

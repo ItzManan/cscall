@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import builtins
+import importlib
+import sys
+import threading
 from pathlib import Path
 import wave
 
@@ -108,6 +112,108 @@ def _make_client(app):
 
 def _require_fastapi():
     pytest.importorskip("fastapi")
+
+
+def test_live_module_import_does_not_require_uvicorn(monkeypatch):
+    monkeypatch.delitem(sys.modules, "cscall.live", raising=False)
+
+    real_import = builtins.__import__
+
+    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "uvicorn" and level == 0:
+            raise AssertionError("uvicorn imported during module import")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    live = importlib.import_module("cscall.live")
+
+    assert hasattr(live, "run_live_server")
+
+
+def test_run_live_server_uses_default_model_options_and_uvicorn(monkeypatch):
+    import cscall.live as live
+
+    captured = {}
+    app = object()
+
+    def fake_create_live_app(*, model, device, compute_type, language):
+        captured["create"] = {
+            "model": model,
+            "device": device,
+            "compute_type": compute_type,
+            "language": language,
+        }
+        return app
+
+    fake_uvicorn = sys.modules.get("uvicorn")
+    if fake_uvicorn is None:
+        fake_uvicorn = importlib.util.module_from_spec(
+            importlib.machinery.ModuleSpec("uvicorn", loader=None)
+        )
+
+    def fake_run(actual_app, *, host, port):
+        captured["run"] = {"app": actual_app, "host": host, "port": port}
+
+    fake_uvicorn.run = fake_run
+    monkeypatch.setattr(live, "create_live_app", fake_create_live_app)
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    live.run_live_server(host="127.0.0.1", port=8000)
+
+    assert captured["create"] == {
+        "model": "small",
+        "device": "cpu",
+        "compute_type": "int8",
+        "language": None,
+    }
+    assert captured["run"] == {"app": app, "host": "127.0.0.1", "port": 8000}
+
+
+def test_run_live_server_forwards_custom_model_options(monkeypatch):
+    import cscall.live as live
+
+    captured = {}
+    app = object()
+
+    def fake_create_live_app(*, model, device, compute_type, language):
+        captured["create"] = {
+            "model": model,
+            "device": device,
+            "compute_type": compute_type,
+            "language": language,
+        }
+        return app
+
+    fake_uvicorn = sys.modules.get("uvicorn")
+    if fake_uvicorn is None:
+        fake_uvicorn = importlib.util.module_from_spec(
+            importlib.machinery.ModuleSpec("uvicorn", loader=None)
+        )
+
+    def fake_run(actual_app, *, host, port):
+        captured["run"] = {"app": actual_app, "host": host, "port": port}
+
+    fake_uvicorn.run = fake_run
+    monkeypatch.setattr(live, "create_live_app", fake_create_live_app)
+    monkeypatch.setitem(sys.modules, "uvicorn", fake_uvicorn)
+
+    live.run_live_server(
+        host="0.0.0.0",
+        port=8123,
+        model="medium",
+        device="cuda",
+        compute_type="float16",
+        language="hi",
+    )
+
+    assert captured["create"] == {
+        "model": "medium",
+        "device": "cuda",
+        "compute_type": "float16",
+        "language": "hi",
+    }
+    assert captured["run"] == {"app": app, "host": "0.0.0.0", "port": 8123}
 
 
 def test_live_routes_return_placeholders():
@@ -352,9 +458,11 @@ def test_websocket_flushes_once_on_disconnect():
         def __init__(self):
             self.flush_calls = 0
             self.update_calls = 0
+            self.updated = threading.Event()
 
         def update(self, chunk: AudioChunk):
             self.update_calls += 1
+            self.updated.set()
             return []
 
         def flush(self, timestamp_ms: int):
@@ -369,6 +477,7 @@ def test_websocket_flushes_once_on_disconnect():
     with client.websocket_connect("/ws/transcribe") as ws:
         ws.send_json({"type": "start", "sample_rate": 16000})
         ws.send_bytes(b"\x00\x00" * 16000)
+        assert session.updated.wait(timeout=1)
 
     assert session.flush_calls == 1
     assert session.update_calls == 1

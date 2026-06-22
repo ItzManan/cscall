@@ -135,6 +135,13 @@ def _add_ui_parser(subparsers: argparse._SubParsersAction) -> None:
     _add_speaker_model_args(parser)
 
 
+def _add_live_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("live", help="run the local live transcription web UI")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=_port_int, default=8000)
+    _add_speaker_model_args(parser)
+
+
 def _iter_wav_chunks(
     audio_path: str, chunk_ms: int, energy_threshold: int = 200
 ) -> tuple[list[AudioChunk], tuple[int, int, int]]:
@@ -403,6 +410,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_stream_parser(sub)
     _add_benchmark_parser(sub)
     _add_ui_parser(sub)
+    _add_live_parser(sub)
     return parser
 
 
@@ -447,6 +455,17 @@ def main(argv: list[str] | None = None) -> None:
         _run_transcribe_speakers(args)
     elif args.command == "ui":
         run_server(
+            host=args.host,
+            port=args.port,
+            model=args.model,
+            device=args.device,
+            compute_type=args.compute_type,
+            language=args.language,
+        )
+    elif args.command == "live":
+        from cscall.live import run_live_server
+
+        run_live_server(
             host=args.host,
             port=args.port,
             model=args.model,
