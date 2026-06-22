@@ -1,7 +1,7 @@
 # Phase 5 Design: Live Microphone Transcription
 
 **Date:** 2026-06-22  
-**Status:** Approved direction; awaiting written-spec review
+**Status:** Implemented
 
 ## Goal
 
@@ -177,4 +177,3 @@ Phase 5 is complete when:
 4. automated tests pass without a microphone, model download, or `HF_TOKEN`;
 5. the Docker image starts and serves a healthy live UI;
 6. the README clearly distinguishes live ASR from offline speaker attribution.
-

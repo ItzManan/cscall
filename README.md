@@ -80,8 +80,8 @@ path. Diarization and a UI sit in later phases and are not part of this step.
 
 Phase 3 adds file-level, offline speaker diarization for saved audio. It is
 useful for post-call analysis and evaluation, but it does not provide rolling
-online speaker identities for the live service. Stable speaker identities remain
-part of the live streaming phase.
+online speaker identities for the live service. Stable live speaker identities
+are deferred to Phase 6.
 
 Install the extra dependencies with:
 
