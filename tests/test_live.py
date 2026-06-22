@@ -117,9 +117,61 @@ def test_live_routes_return_placeholders():
     app = live.create_live_app(session_factory=lambda: None)
     client = _make_client(app)
 
-    assert "Live transcript" in client.get("/").text
-    assert "AudioWorkletProcessor" in client.get("/audio-worklet.js").text
+    html = client.get("/").text
+    worklet = client.get("/audio-worklet.js").text
+
+    assert "<title>Live transcript</title>" in html
+    assert '<h1 id="live-heading">Live transcript</h1>' in html
+    assert "Start microphone" in html
+    assert "Stop" in html
+    assert 'aria-live="polite"' in html
+    assert 'role="status"' in html
+    assert "Final transcript" in html
+    assert "Stable transcript" in html
+    assert "Partial transcript" in html
+    assert "Latency" in html
+    assert "RTF" in html
+    assert "speaker labels are not available yet" in html.lower()
+    assert "WAV upload is the speaker-attributed path" in html
+    assert "innerHTML" not in html
+    assert "script src=" not in html.lower()
+    assert "link rel=" not in html.lower()
+
+    assert "AudioWorkletProcessor" in worklet
+    assert "Int16Array" in worklet
+    assert "16000" in worklet
+    assert "1600" in worklet
+    assert "registerProcessor" in worklet
+    assert "postMessage" in worklet
+    assert "inputs[0] && inputs[0][0]" in worklet
+    assert "no external assets" not in worklet.lower()
     assert client.get("/health").json() == {"status": "ok"}
+
+
+def test_live_ui_script_uses_safe_dom_and_reconnect_limits():
+    _require_fastapi()
+    import cscall.live as live
+
+    app = live.create_live_app(session_factory=lambda: None)
+    client = _make_client(app)
+    html = client.get("/").text
+
+    assert "navigator.mediaDevices.getUserMedia" in html
+    assert "audioWorklet.addModule('/audio-worklet.js')" in html or "audioWorklet.addModule(\"/audio-worklet.js\")" in html
+    assert "new WebSocket(" in html
+    assert "/ws/transcribe" in html
+    assert "location.protocol === 'https:'" in html or 'location.protocol === "https:"' in html
+    assert "wss:" in html
+    assert "ws:" in html
+    assert "replaceChildren" in html
+    assert "createElement" in html
+    assert "textContent" in html
+    assert "innerHTML" not in html
+    assert "maximum 3 attempts" not in html.lower()
+    assert "MAX_RECONNECT_ATTEMPTS" in html
+    assert "reconnectAttempts" in html
+    assert "STOP_TIMEOUT_MS" in html
+    assert 'payload.type === "stable"' in html
 
 
 def test_websocket_streams_events_and_stop_closes_cleanly():
