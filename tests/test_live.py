@@ -131,6 +131,22 @@ def test_live_module_import_does_not_require_uvicorn(monkeypatch):
     assert hasattr(live, "run_live_server")
 
 
+def test_docker_packaging_runs_live_server_without_secrets():
+    dockerfile = Path("Dockerfile").read_text()
+    dockerignore = Path(".dockerignore").read_text()
+
+    assert "python:3.11-slim" in dockerfile
+    assert '".[live]"' in dockerfile
+    assert "cscall.cli" in dockerfile
+    assert '"live"' in dockerfile
+    assert '"0.0.0.0"' in dockerfile
+    assert '"8000"' in dockerfile
+    assert "HF_TOKEN" not in dockerfile
+    assert ".env" in dockerignore
+    assert ".venv" in dockerignore
+    assert "output_model" in dockerignore
+
+
 def test_run_live_server_uses_default_model_options_and_uvicorn(monkeypatch):
     import cscall.live as live
 
@@ -459,6 +475,7 @@ def test_websocket_flushes_once_on_disconnect():
             self.flush_calls = 0
             self.update_calls = 0
             self.updated = threading.Event()
+            self.flushed = threading.Event()
 
         def update(self, chunk: AudioChunk):
             self.update_calls += 1
@@ -467,6 +484,7 @@ def test_websocket_flushes_once_on_disconnect():
 
         def flush(self, timestamp_ms: int):
             self.flush_calls += 1
+            self.flushed.set()
             return []
 
     session = FakeSession()
@@ -479,6 +497,7 @@ def test_websocket_flushes_once_on_disconnect():
         ws.send_bytes(b"\x00\x00" * 16000)
         assert session.updated.wait(timeout=1)
 
+    assert session.flushed.wait(timeout=1)
     assert session.flush_calls == 1
     assert session.update_calls == 1
 

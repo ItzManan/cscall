@@ -50,8 +50,8 @@ Language auto-detection remains the default; `--language` is only for forced
 runs when you want reproducible language-specific behavior. For a native Mac
 demo, start with `--model small` and drop to `tiny` if the small model's real-
 time factor is still above 1. For the portable benchmark path, use
-`--device cpu --compute-type int8`. Docker packaging is intentionally deferred
-to Phase 5.
+`--device cpu --compute-type int8`. Phase 5 adds the packaged browser-based
+live path described below.
 
 `benchmark` accepts either one or more WAV paths via `--audio` or a JSONL
 manifest via `--manifest`.
@@ -140,5 +140,41 @@ python -m cscall.cli ui --host 127.0.0.1 --port 8000 --model small
 
 Then open the printed URL, upload a WAV, and wait for the transcript. The
 browser shows timestamped speaker turns and timing metrics (processing time,
-audio duration, and RTF). Live microphone capture and WebSocket transcription
-are planned for Phase 5 and are not present in this phase.
+audio duration, and RTF).
+
+## Phase 5: live microphone transcription
+
+Install the optional live-server dependencies:
+
+```bash
+python -m pip install -e ".[dev,live]"
+```
+
+Start the live UI:
+
+```bash
+python -m cscall.cli live
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000), allow microphone access,
+and press **Start microphone**. The first real session downloads the selected
+Whisper model if it is not already cached. The page shows partial, stable, and
+final captions plus latency and real-time factor (RTF).
+
+Live mode currently performs ASR only; it does not assign speaker labels. Use
+the Phase 4 `ui` command and upload a WAV when speaker-attributed transcription
+is required. That upload workflow still requires the diarization extra,
+`HF_TOKEN`, and accepted Community-1 model conditions.
+
+Microphone capture works on localhost. A remote deployment must use HTTPS
+because browsers require a secure context for microphone access.
+
+The health endpoint is available at
+[http://127.0.0.1:8000/health](http://127.0.0.1:8000/health).
+
+Build and run the CPU Docker image:
+
+```bash
+docker build -t cscall .
+docker run --rm -p 8000:8000 cscall
+```
