@@ -39,3 +39,142 @@ fine-tune targets. Reproduce with:
 python -m cscall.cli baseline --manifest data/manifests/codeswitch_test.jsonl \
     --model small --group-by cs_bucket
 ```
+
+## Phase 2: streaming demo
+
+The Phase 2 CLI adds a local streaming smoke test over a WAV file. It chunks the
+audio, runs the existing streaming session, and prints `stable`, `partial`,
+`final`, and metrics lines.
+
+Language auto-detection remains the default; `--language` is only for forced
+runs when you want reproducible language-specific behavior. For a native Mac
+demo, start with `--model small` and drop to `tiny` if the small model's real-
+time factor is still above 1. For the portable benchmark path, use
+`--device cpu --compute-type int8`. Phase 5 adds the packaged browser-based
+live path described below.
+
+`benchmark` accepts either one or more WAV paths via `--audio` or a JSONL
+manifest via `--manifest`.
+
+```bash
+# Fast model-free smoke test
+python -m cscall.cli stream --audio tests/fixtures/audio/a.wav \
+    --fake-transcript "hello world"
+
+# Native Mac demo; use tiny if small has RTF > 1
+python -m cscall.cli stream --audio call.wav --model small
+
+# Portable CPU benchmark/default intended for Docker
+python -m cscall.cli benchmark --audio call.wav --model tiny \
+    --device cpu --compute-type int8
+
+# Reproducible forced-language experiment
+python -m cscall.cli stream --audio call.wav --language hi
+```
+
+`--fake-transcript` keeps the command model-free for demos and tests. When it is
+omitted, the CLI wires through `WhisperTranscriber` for the real transcription
+path. Diarization and a UI sit in later phases and are not part of this step.
+
+## Phase 3: speaker diarization workflow
+
+Phase 3 adds file-level, offline speaker diarization for saved audio. It is
+useful for post-call analysis and evaluation, but it does not provide rolling
+online speaker identities for the live service. Stable live speaker identities
+are deferred to Phase 6.
+
+Install the extra dependencies with:
+
+```bash
+pip install -e ".[dev,diarization]"
+```
+
+Before running diarization, set `HF_TOKEN` in your shell to a valid Hugging Face
+access token. Do not paste a real token into docs or commands. For example:
+
+```bash
+export HF_TOKEN=hf_your_token_here
+```
+
+The Community-1 model is available here:
+[pyannote/speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1)
+
+You must accept the model agreement on Hugging Face before the CLI can use it.
+
+```bash
+# File-level diarization for a local audio file
+python -m cscall.cli diarize --audio call.wav
+
+# Compare against a ground-truth RTTM file when you have one
+python -m cscall.cli diarize --audio call.wav --reference-rttm call.rttm
+
+# Transcribe and attribute speakers for a local audio file
+python -m cscall.cli transcribe-speakers --audio call.wav --model small
+```
+
+## Phase 4: upload transcript UI
+
+Phase 4 adds an upload-based browser UI for saved WAV files. It transcribes and
+diarizes locally; after the model downloads complete, the upload flow runs
+offline against the local file and shows timestamped speaker turns plus timing
+metrics in the browser.
+
+Install the extra dependencies with:
+
+```bash
+pip install -e ".[dev,diarization]"
+```
+
+Before starting the server, set `HF_TOKEN` in your shell to a valid Hugging
+Face access token. Do not paste a real token into docs or commands. For example:
+
+```bash
+export HF_TOKEN=hf_your_token_here
+```
+
+Launch the UI with:
+
+```bash
+python -m cscall.cli ui --host 127.0.0.1 --port 8000 --model small
+```
+
+Then open the printed URL, upload a WAV, and wait for the transcript. The
+browser shows timestamped speaker turns and timing metrics (processing time,
+audio duration, and RTF).
+
+## Phase 5: live microphone transcription
+
+Install the optional live-server dependencies:
+
+```bash
+python -m pip install -e ".[dev,live]"
+```
+
+Start the live UI:
+
+```bash
+python -m cscall.cli live
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000), allow microphone access,
+and press **Start microphone**. The first real session downloads the selected
+Whisper model if it is not already cached. The page shows partial, stable, and
+final captions plus latency and real-time factor (RTF).
+
+Live mode currently performs ASR only; it does not assign speaker labels. Use
+the Phase 4 `ui` command and upload a WAV when speaker-attributed transcription
+is required. That upload workflow still requires the diarization extra,
+`HF_TOKEN`, and accepted Community-1 model conditions.
+
+Microphone capture works on localhost. A remote deployment must use HTTPS
+because browsers require a secure context for microphone access.
+
+The health endpoint is available at
+[http://127.0.0.1:8000/health](http://127.0.0.1:8000/health).
+
+Build and run the CPU Docker image:
+
+```bash
+docker build -t cscall .
+docker run --rm -p 8000:8000 cscall
+```

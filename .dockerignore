@@ -1,0 +1,16 @@
+.git
+.venv
+.env
+.idea
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+output_model
+data
+results
+models
+tests/fixtures/audio
+*.wav
+*.m4a
+uv.lock
+docs/superpowers
