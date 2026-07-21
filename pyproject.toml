@@ -12,6 +12,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0.0"]
 diarization = ["pyannote.audio>=4,<5"]
+finetune = ["accelerate", "datasets<4", "peft", "soundfile", "torch", "transformers"]
 live = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1"]
 
 [build-system]

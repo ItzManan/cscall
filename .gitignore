@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 *.egg-info/
+.env
+.idea/
 .venv/
 venv/
 node_modules/
@@ -13,4 +15,5 @@ data/manifests/
 *.pt
 *.bin
 models/
+output_model/
 .DS_Store

@@ -40,6 +40,18 @@ python -m cscall.cli baseline --manifest data/manifests/codeswitch_test.jsonl \
     --model small --group-by cs_bucket
 ```
 
+### Local LoRA fine-tune on Apple Silicon
+
+```bash
+pip install -e ".[finetune]"
+python -m cscall.finetune.train_lora --language auto --output-dir output_model/local
+python -m cscall.cli compare --manifest data/manifests/codeswitch_test.jsonl \
+    --finetuned-ct2 output_model/local/ct2 --group-by cs_bucket
+```
+
+The local trainer auto-selects MPS on Apple Silicon. Defaults are conservative
+for a 24 GB M4 Pro: batch size 2, gradient accumulation 8.
+
 ## Phase 2: streaming demo
 
 The Phase 2 CLI adds a local streaming smoke test over a WAV file. It chunks the
